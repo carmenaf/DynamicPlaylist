@@ -1,0 +1,3 @@
+#
+RewriteRule "*\.json$" - [F]
+#
