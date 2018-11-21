@@ -3,17 +3,31 @@ class smil
 {
 
     private $error; # last error
-    public function __construct()
+    private $xml; # last error
+    private $fileName;
+    private $timeCounter;
+    private $timeDelta; # start processing for record no early this time
+
+    public function __construct($fileName)
     {
         $this->error = '';
+        $this->xml = null;
+        $this->$fileName = $fileName;
+        $this->$timeCounter = 0;
+        $this->$videoLength = 0;
+        $this->timeDelta = 30; // 30 sec
     }
 
-    public static function writeToLog($message)
+    public function writeToLog($message)
     {
         echo "$message\n";
         #fwrite(STDERR, "$message\n");
     }
 
+    public function getTimeCounter()
+    {
+        return ($this->$timeCounter);
+    }
 /*
  * date2unix
  * this function translate time in format 00:00:00.00 to seconds
@@ -79,5 +93,123 @@ class smil
             return (false);
         }
         return ($out);
+    }
+
+/**
+ * getStreamInfo
+ * function get info about video or audio stream in the file
+ *
+ * @param    string $fileName
+ * @param    string $streamType    must be  'audio' or 'video'
+ * @param    array &$data          return data
+ * @return    integer 1 for success, 0 for any error
+ */
+    public static function getStreamInfo($fileName, $streamType, &$data)
+    {
+        # parameter - 'audio' or 'video'
+        $ffprobe = self::$ffprobe;
+
+        if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -of json`, true)) {
+            self::writeToLog("Cannot get info about file $fileName");
+            return 0;
+        }
+        if (empty($probeJson["streams"])) {
+            self::writeToLog("Cannot get info about streams in file $fileName");
+            return 0;
+        }
+        foreach ($probeJson["streams"] as $stream) {
+            if ($stream["codec_type"] == $streamType) {
+                $data = $stream;
+                break;
+            }
+        }
+
+        if (empty($data)) {
+            self::writeToLog("File $fileName :  stream not found");
+            return 0;
+        }
+        if ('video' == $streamType) {
+            if (empty($data["height"]) || !intval($data["height"]) || empty($data["width"]) || !intval($data["width"])) {
+                self::writeToLog("File $fileName : invalid or corrupt dimensions");
+                return 0;
+            }
+        }
+
+        return 1;
+    }
+
+    private function getXml($xmlString)
+    {
+        $xmlString = file_get_contents($fileName);
+        try {
+            $xml = simplexml_load_string($xmlString);
+        } catch (Exception $e) {
+            $smil->writeToLog('Exception: ', $e->getMessage());
+            return (false);
+        }
+        return ($xml);
+    }
+
+    public function makeFifo($fifoPath)
+    {
+        if (!file_exists($fifoPath)) {
+            if (!posix_mkfifo($fifoPath, 0644)) {
+                $this->writeToLog("Cannot create a pipe '$fifoPath'");
+                return (false);
+            }
+        }
+        return (true);
+    }
+
+    public function getNextRecord()
+    {
+        if (!$this->readXml()) {
+            $this->writeToLog("Cannot get next record in playlist");
+            return (false);
+        }
+        foreach ($this->xml->body->playlist as $record) {
+            /*
+            echo $record["name"] . PHP_EOL;
+            echo $record["playOnStream"] . PHP_EOL;
+            echo $record["scheduled"] . PHP_EOL;
+            echo $record->video["src"] . PHP_EOL;
+            echo $record->video["start"] . PHP_EOL;
+            echo $record->video["length"] . PHP_EOL;
+            echo PHP_EOL;
+             */
+            $start = date2unix($record->video["start"]);
+            if (!$start) {
+                return (false);
+            }
+            if ($start < $this->$timeCounter) {
+                continue;
+            }
+            $this->$timeCounter = $start;
+            $this->$videoLength = $record->video["length"];
+            return ($record);
+
+        }
+        return (array());
+    }
+
+    private function readXml()
+    {
+        for ($i = 0; $i < 5; $i++) {
+            // try read xml file
+            $xmlString = file_get_contents($this->fileName);
+            if ($xmlString) {
+                break;
+            }
+            sleep(1);
+        }
+        if (!$xmlString) {
+            $this->writeToLog("Cannot read content of file " . $this->fileName);
+            return (false);
+        }
+        $this->xml = $this->getXml($xmlString);
+        if (!$this->xml) {
+            return (false);
+        }
+        return (true);
     }
 }

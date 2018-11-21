@@ -8,7 +8,7 @@ if [ ! -p "$EXTERNAL_FIFO" ]; then
     mkfifo "${EXTERNAL_FIFO:?}"
 fi
 
-exec 3< $EXTERNAL_FIFO 
+exec 3< $EXTERNAL_FIFO
 
 fn_concat_init() {
     echo "fn_concat_init"
@@ -56,7 +56,7 @@ ffmpeg -y -i  "${concat_pls:?}" \
 -c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 5000k -maxrate 5350k -bufsize 7500k -r 25 \
 -sc_threshold 0 \
 -g 48 -keyint_min 48 \
--hls_time 4  \
+-hls_time 3  \
 -hls_flags append_list \
 -hls_playlist_type event \
 -hls_allow_cache 1 \
@@ -85,20 +85,20 @@ do
             break
         fi
         ffmpeg -y -i  $filename \
-        -vf "scale=w=1920:h=1080, setsar=1, setpts=PTS-STARTPTS" \
-        -c:a aac -bsf:a aac_adtstoasc \
-        -c:v h264 -bsf:v h264_mp4toannexb -profile:v main -crf 18 -preset superfast -b:a 192k -r 25 \
-        $filename.$i.mp4
+        -vf "scale=w=min(iw*720/ih\,1280):h=min(720\,ih*1280/iw), pad=w=1280:h=720:x=(1280-iw)/2:y=(720-ih)/2, setsar=1, setpts=PTS-STARTPTS" \
+        -af "apad" \
+        -c:v h264 -bsf:v h264_mp4toannexb -crf 18 -preset superfast -r 25 -shortest -f mpegts \
+        $filename.$i.ts
         if [ $? -eq 0 ]; then
-            fn_concat_feed $filename.$i.mp4
-            rm $filename.$i.mp4
+            fn_concat_feed $filename.$i.ts
+            rm $filename.$i.ts
             ((i++));
             echo "Processing file $i"
         else
             echo "Something wrong while processing file $filename"
         fi
     fi
-done 
+done
 
 #for filename in 3.mp4 1_30.mp4 4.mp4  2_30.mp4 5.mp4  ; do
 
