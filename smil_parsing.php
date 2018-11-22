@@ -49,7 +49,7 @@ if (!$smil->makeFifo($fifoPath)) {
     exit(1);
 }
 
-$fifo = fopen($fifoPath, 'w');
+#$fifo = fopen($fifoPath, 'w');
 $timeBorder = 0;
 while (true) {
     $record = $smil->getNextRecord();
@@ -67,7 +67,9 @@ while (true) {
     if (preg_match('/^mp4:(.+)$/', $record->video["src"], $matches)) {
         $mp4File = $config["mp4basedir"] . "/" . $matches[1];
         if (file_exists($mp4File)) {
-            fwrite($fifo, $mp4File);
+            $command = "echo '$mp4File' > $fifoPath";
+            exec($command);
+            #fwrite($fifo, $mp4File);
             $smil->writeToLog("Send command for processing file '$mp4File'");
         } else {
             $smil->writeToLog("Error: File '$mp4File' do not exists");
@@ -81,7 +83,10 @@ while (true) {
     sleep($timeBorder - $timeWatrmark);
     $timeBorder = 0;
 }
-fwrite($fifo, "EOF"); // magic string, finish processing on daemon
+$command = "echo 'EOF' > $fifoPath";
+exec($command);
+
+#fwrite($fifo, "EOF"); // magic string, finish processing on daemon
 
 /*
 foreach ($xml->body->playlist as $record) {

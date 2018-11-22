@@ -2,19 +2,19 @@
 class smil
 {
 
-    private $error; # last error
-    private $xml; # last error
+    private $error; // last error
+    private $xml; 
     private $fileName;
-    private $timeCounter;
-    private $timeDelta; # start processing for record no early this time
+    private $timeCounter; // last video started at this time
+    private $timeDelta; // start processing for record no early this time
+    //private $time; //
 
     public function __construct($fileName)
     {
         $this->error = '';
         $this->xml = null;
-        $this->$fileName = $fileName;
-        $this->$timeCounter = 0;
-        $this->$videoLength = 0;
+        $this->fileName = $fileName;
+        $this->timeCounter = 0;
         $this->timeDelta = 30; // 30 sec
     }
 
@@ -140,7 +140,7 @@ class smil
 
     private function getXml($xmlString)
     {
-        $xmlString = file_get_contents($fileName);
+        $xmlString = file_get_contents($this->fileName);
         try {
             $xml = simplexml_load_string($xmlString);
         } catch (Exception $e) {
@@ -177,7 +177,7 @@ class smil
             echo $record->video["length"] . PHP_EOL;
             echo PHP_EOL;
              */
-            $start = date2unix($record->video["start"]);
+            $start = $this->date2unix($record->video["start"]);
             if (!$start) {
                 return (false);
             }
