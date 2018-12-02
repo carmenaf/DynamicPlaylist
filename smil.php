@@ -3,25 +3,36 @@ class smil
 {
 
     private $error; // last error
-    private $xml; 
+    private $xml;
     private $fileName;
     private $timeCounter; // last video started at this time
     private $timeDelta; // start processing for record no early this time
     //private $time; //
+    private $ffprobe;
+    private $logStdout;
+    private $debug;
 
-    public function __construct($fileName)
+    public function __construct($fileName, $debug = false)
     {
         $this->error = '';
         $this->xml = null;
         $this->fileName = $fileName;
         $this->timeCounter = 0;
         $this->timeDelta = 30; // 30 sec
+        $this->ffprobe = 'ffprobe';
+        $this->logStdout = true;
+        $this->debug = $debug;
     }
 
     public function writeToLog($message)
     {
-        echo "$message\n";
-        #fwrite(STDERR, "$message\n");
+        #echo "$message\n";
+        $date = date("Y-m-d H:i:s");
+        if ($this->logStdout) {
+            echo "$date $message" . PHP_EOL;
+            return (true);
+        }
+        fwrite(STDERR, "$date   $message" . PHP_EOL);
     }
 
     public function getTimeCounter()
@@ -95,6 +106,55 @@ class smil
         return ($out);
     }
 
+    public function getVideoInfo($fileName)
+    {
+        # parameter - 'audio' or 'video'
+        $ffprobe = $this->ffprobe;
+        $duration = array();
+        $data = array();
+
+        if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -show_format -of json `, true)) {
+            writeToLog("Cannot get info about file $fileName");
+            return (false);
+        }
+        if (empty($probeJson["streams"])) {
+            writeToLog("Cannot get info about streams in file $fileName");
+            return (false);
+        }
+        foreach ($probeJson["streams"] as $stream) {
+
+            if ('video' == $stream["codec_type"]) {
+                if (empty($stream["height"]) || !intval($stream["height"]) || empty($stream["width"]) || !intval($stream["width"])) {
+                    writeToLog("File $fileName : invalid or corrupt dimensions");
+                    return (false);
+                }
+                $data["height"] = $stream["height"];
+                $data["width"] = $stream["width"];
+            }
+            if (isset($stream['duration']) && $stream['duration'] > 0) {
+                $duration[] = $stream['duration'];
+            }
+            if (isset($stream['tags']['DURATION']) && $this->time2float($stream['tags']['DURATION']) > 0) {
+                $duration[] = $this->time2float($stream['tags']['DURATION']);
+            }
+        }
+
+        if (empty($duration)) {
+            writeToLog("Error! File $fileName have incorrect format");
+            return (false);
+        }
+        $data['duration'] = min($duration);
+        $rate = $data["width"] / $data["height"];
+        $data["widthHD"] = round($data["width"] * 16 / 9 / $rate);
+        $data["heightHD"] = $data["height"];
+
+        if ($data['width'] / $data['height'] > 16 / 9) {
+            $data["widthHD"] = $data["width"];
+            $data["heightHD"] = round($data["height"] * 16 / 9 / $rate);
+        }
+        return ($data);
+    }
+
 /**
  * getStreamInfo
  * function get info about video or audio stream in the file
@@ -104,10 +164,10 @@ class smil
  * @param    array &$data          return data
  * @return    integer 1 for success, 0 for any error
  */
-    public static function getStreamInfo($fileName, $streamType, &$data)
+    public function getStreamInfo($fileName, $streamType, &$data)
     {
         # parameter - 'audio' or 'video'
-        $ffprobe = self::$ffprobe;
+        $ffprobe = $this->ffprobe;
 
         if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -of json`, true)) {
             self::writeToLog("Cannot get info about file $fileName");
@@ -161,6 +221,51 @@ class smil
         return (true);
     }
 
+    public function getStreamName()
+    {
+        if (!$this->readXml()) {
+            $this->writeToLog("Cannot get stream name from smil file");
+            return (false);
+        }
+        if (isset($this->xml->body->stream)) {
+            return ($this->xml->body->stream);
+        }
+        return (false);
+    }
+
+    public function getNextRecordByTime($startTimeUnix)
+    {
+        if (!$this->readXml()) {
+            $this->writeToLog("Cannot get next record in playlist");
+            return (false);
+        }
+        foreach ($this->xml->body->playlist as $record) {
+            /*
+            echo $record["name"] . PHP_EOL;
+            echo $record["playOnStream"] . PHP_EOL;
+            echo $record["scheduled"] . PHP_EOL;
+            echo $record->video["src"] . PHP_EOL;
+            echo $record->video["start"] . PHP_EOL;
+            echo $record->video["length"] . PHP_EOL;
+            echo PHP_EOL;
+             */
+            $scheduled = $this->date2unix($record["scheduled"]);
+            if ($this->debug) {
+                print var_dump($record);
+                print var_dump($scheduled);
+                print var_dump($startTimeUnix);
+            }
+            if (!$scheduled) { // incorrect date format
+                return (false);
+            }
+            if ($scheduled < $startTimeUnix) {
+                continue;
+            }
+            return ($record);
+        }
+        return (array());
+    }
+
     public function getNextRecord()
     {
         if (!$this->readXml()) {
@@ -212,4 +317,26 @@ class smil
         }
         return (true);
     }
+
+/**
+ * doExec
+ * @param    string    $Command
+ * @return integer 0-error, 1-success
+ */
+
+    public function doExec($Command)
+    {
+        $outputArray = array();
+        if ($this->debug) {
+            print $Command . PHP_EOL;
+            return 1;
+        }
+        exec($Command, $outputArray, $execResult);
+        if ($execResult) {
+            $this->writeToLog(join("\n", $outputArray));
+            return 0;
+        }
+        return 1;
+    }
+
 }

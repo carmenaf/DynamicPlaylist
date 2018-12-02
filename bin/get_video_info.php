@@ -11,7 +11,8 @@ if (!$fileName) {
     help("Please set the video filename");
 }
 if (!file_exists($fileName)) {
-    help("File $fileName do not exists");
+    #  we can get info about rtmp or hls streams
+    #help("File $fileName do not exists");
 }
 
 #if (!$parameter) {
