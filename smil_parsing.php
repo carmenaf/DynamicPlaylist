@@ -14,29 +14,20 @@ if (!file_exists($fileName)) {
     help("File $fileName do not exists");
 }
 
-$smil = new smil($fileName);
+$smil = new smil($fileName, false);
 
 $basedir = dirname(__FILE__);
 $binDir = "$basedir/bin";
-$tmpDir = "/tmp/smil";
 $logDir = "$basedir/logs";
 $logUrl = "./logs";
 
 $dataDir = "$basedir/data";
 $configFile = "$dataDir/config.json";
 
-$concatFifoPath = "$tmpDir/concat.fifo";
-$prepareFifoPath = "$tmpDir/prepare.fifo";
+$processingBin = "$binDir/playlist2stream.sh";
 
-$processingBin="$basedir/playlist2stream.sh";
-
-$delta = 10; // 10 sec
+$delta = 2; // 10 sec
 $debug = true;
-
-if (!is_dir($tmpDir)) {
-    @mkdir($tmpDir);
-}
-
 
 $config = $smil->readJson($configFile);
 if (!$config) {
@@ -56,30 +47,33 @@ $preparedVideoBasedir = isset($config["preparedVideoBasedir"]) ? $config["prepar
 //if( !$smil->readXml()) {
 //exit(1);
 //}
-
-if (!$smil->makeFifo($concatFifoPath)) {
-    exit(1);
-}
-if (!$smil->makeFifo($prepareFifoPath)) {
-    exit(1);
-}
-
 $streamName = $smil->getStreamName();
 if (!$streamName) {
     exit(1);
 }
 
-$command="/bin/bash $processingBin & " ;
-//$smil->doExec( $command );
+$tmpDir = "/tmp/smil/$streamName";
+$concatFifoPath = "$tmpDir/concat.fifo";
+if (!is_dir($tmpDir)) {
+    @mkdir($tmpDir);
+}
+if (!$smil->makeFifo($concatFifoPath)) {
+    exit(1);
+}
 
+if (!doConcatListFile($tmpDir, $smil, 100)) {
+    exit(1);
+}
 
-$prepareVideoRecordTime = 0;
-$playVideoRecordTime = 0;
+// run ffmpeg processing
+$command = "/bin/bash $processingBin $hlsBasedir/$streamName $tmpDir >>$logDir/processing.log 2>&1 &";
+$smil->doExec($command);
 
 while (true) {
     $dt = date("U");
     //$now = date("Y-m-d H:i:s");
-    $record = $smil->getNextRecordByTime($dt + $delta);
+    $record = $smil->getNextRecordByTime($dt);
+
     if ($debug) {
         print "Got the record:" . PHP_EOL;
         print var_dump($record);
@@ -98,6 +92,10 @@ while (true) {
     $scheduled = $smil->date2unix($record["scheduled"]);
     $start = floatval($record->video["start"]);
     $length = floatval($record->video["length"]);
+
+    if( $scheduled-$dt >1 ) {
+        usleep( intval(($scheduled-$dt-1)*1000000 )) ;
+    }
 
     if (preg_match('/^mp4:\/(.+)$/', $record->video["src"], $matches)) {
         $mp4File = "$mp4Basedir/" . $matches[1];
@@ -124,11 +122,9 @@ while (true) {
         print var_dump($delta);
         print var_dump($scheduled - $dt + $length - $delta);
     }
-    sleep($scheduled - $dt + $length - $delta);
-    $timeBorder = 0;
+    //sleep($scheduled - $dt + $length - $delta);
+    usleep( intval($length*1000000 )) ;
 }
-
-
 
 $command = "echo 'EOF' > $concatFifoPath";
 if ($debug) {
@@ -166,4 +162,19 @@ function help($msg)
     file.smil - input file in SMIL format
 	\n");
     exit(-1);
+}
+
+function doConcatListFile($tmpDir, $smil, $count = 100)
+{
+    $listFile = "$tmpDir/list.txt";
+    $listFileBody = "ffconcat version 1.0" . PHP_EOL;
+    for ($i = 0; $i < 100; $i++) {
+        $fifoName = "$tmpDir/fifo_${i}.tmp";
+        if (!$smil->makeFifo($fifoName)) {
+            return (false);
+        }
+        $listFileBody .= "file '$fifoName'" . PHP_EOL;
+    }
+    file_put_contents($listFile, $listFileBody);
+    return (true);
 }

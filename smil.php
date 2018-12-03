@@ -227,8 +227,9 @@ class smil
             $this->writeToLog("Cannot get stream name from smil file");
             return (false);
         }
-        if (isset($this->xml->body->stream)) {
-            return ($this->xml->body->stream);
+
+        if (isset($this->xml->body->stream['name'])) {
+            return ($this->xml->body->stream['name']);
         }
         return (false);
     }
