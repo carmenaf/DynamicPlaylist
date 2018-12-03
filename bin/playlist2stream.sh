@@ -98,9 +98,15 @@ ffmpeg -y -loglevel ${LOGLEVEL} -re -f concat -safe 0  -i "${concat_pls:?}" \
 -c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 -shortest \
 -af "apad, asetpts=PTS-STARTPTS" \
 -c:a aac -bsf:a aac_adtstoasc -ar 48000 -b:a 192k -ac 2 \
+-vsync 1 \
 -sc_threshold 0 \
 -g 48 -keyint_min 48 \
--f flv  rtmp://localhost/myapp/stream 2>>${LOG} \
+-hls_time 4  \
+-hls_flags append_list \
+-hls_playlist_type event \
+-hls_allow_cache 1 \
+-hls_segment_type mpegts \
+-hls_segment_filename "${SUBDIR}/360p_%04d.ts" "${SUBDIR}/360p.m3u8" \
 &
 
 ffplaypid=$!
@@ -128,26 +134,27 @@ do
         DATA_FIFO=$( mktemp --dry-run  tmp.XXXXXXXXXX  )
         mkfifo "${DATA_FIFO:?}"
         
-        tmp_filename="${SUBDIR}/${filename}"
+        #tmp_filename="${SUBDIR}/${filename}"
         ffmpeg -y -loglevel ${LOGLEVEL} -i "${filename}" -ss 0 -t ${duration} \
-        -vf "scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=N/FRAME_RATE/TB " \
-        -af "apad , asetpts=PTS-STARTPTS" \
+        -vf "scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS " \
+        -af "asetrate=44100 , asetpts=PTS-STARTPTS" \
         -c:a aac -bsf:a aac_adtstoasc -ar 48000 -b:a 96k -ac 2 \
         -c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset slow -b:v 800k -maxrate 856k -bufsize 1200k -r 25 \
-        -f flv - | cat > $DATA_FIFO 2>>${LOG} &
+        -f mpegts - | cat > $DATA_FIFO  &
         
         prepare_pid=$!
         
         fn_concat_feed "${DATA_FIFO}"
         
-        wait "${prepare_pid:?}"
+        #wait "${prepare_pid:?}"
         
-        if [ $? -eq 0 ]; then
+        #if [ $? -eq 0 ]; then
+            ((i++));
             echo "Processing file $i : $filename"
-        else
-            rm "${tmp_filename}" 2>/dev/null
-            echoerr "Something wrong while processing file $filename"
-        fi
+        #else
+            #rm "${tmp_filename}" 2>/dev/null
+            #echoerr "Something wrong while processing file $filename"
+        #fi
         files_to_remove="${files_to_remove} ${DATA_FIFO}"
     fi
 done

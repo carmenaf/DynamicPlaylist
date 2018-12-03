@@ -1,4 +1,6 @@
 {
   "timezone":"Europe/Moscow",
-  "mp4basedir":"/opt/streaming/mp4"
+  "mp4Basedir":"/opt/streaming/mp4",
+  "hlsBasedir":"/opt/streaming/video/hls",
+  "preparedVideoBasedir":"/opt/streaming/video/prepared"
 }
