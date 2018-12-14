@@ -6,20 +6,24 @@ class smil
     private $xml;
     private $fileName;
     private $timeCounter; // last video started at this time
-    private $timeDelta; // start processing for record no early this time
+
     //private $time; //
     private $ffprobe;
+    private $ffmpeg;
+    private $logLevel;
+
     private $logStdout;
     private $debug;
 
-    public function __construct($fileName, $debug = false)
+    public function __construct($fileName, $debug = false, $ffprobe = 'ffprobe', $ffmpeg = 'ffmpeg', $logLevel = 'warning')
     {
         $this->error = '';
         $this->xml = null;
         $this->fileName = $fileName;
         $this->timeCounter = 0;
-        $this->timeDelta = 30; // 30 sec
-        $this->ffprobe = 'ffprobe';
+        $this->ffprobe = $ffprobe;
+        $this->ffmpeg = $ffmpeg;
+        $this->logLevel = $logLevel;
         $this->logStdout = true;
         $this->debug = $debug;
     }
@@ -64,7 +68,7 @@ class smil
  * @return    float
  */
 
-    public static function time2float($t)
+    public  function time2float($t)
     {
         $matches = preg_split("/:/", $t, 3);
         if (array_key_exists(2, $matches)) {
@@ -91,19 +95,19 @@ class smil
         return sprintf("%02d:%02d:%05.2f", $h, $m, $s);
     }
 
-    public static function readJson($configFile)
+    public  function readJson($configFile)
     {
         $json = file_get_contents($configFile);
         if (!$json) {
-            self::writeToLog("Cannot read file '$configFile'");
-            return (false);
+            $this->writeToLog("Cannot read file '$configFile'");
+            return (array());
         }
         $out = json_decode($json, true);
         if (!$out) {
-            self::writeToLog("Incorrect json string in json file '$configFile'");
+            $this->writeToLog("Incorrect json string in json file '$configFile'");
             return (false);
         }
-        return ($out);
+        return (array());
     }
 
     public function getVideoInfo($fileName)
@@ -136,6 +140,10 @@ class smil
             }
             if (isset($stream['tags']['DURATION']) && $this->time2float($stream['tags']['DURATION']) > 0) {
                 $duration[] = $this->time2float($stream['tags']['DURATION']);
+            }
+            if ('audio' == $stream["codec_type"]) {
+                $data["audioCodecName"] = $stream["codec_name"];
+                $data["audioSampleRate"] = $stream["sample_rate"];
             }
         }
 
@@ -170,11 +178,11 @@ class smil
         $ffprobe = $this->ffprobe;
 
         if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -of json`, true)) {
-            self::writeToLog("Cannot get info about file $fileName");
+            $this->writeToLog("Cannot get info about file $fileName");
             return 0;
         }
         if (empty($probeJson["streams"])) {
-            self::writeToLog("Cannot get info about streams in file $fileName");
+            $this->writeToLog("Cannot get info about streams in file $fileName");
             return 0;
         }
         foreach ($probeJson["streams"] as $stream) {
@@ -185,12 +193,12 @@ class smil
         }
 
         if (empty($data)) {
-            self::writeToLog("File $fileName :  stream not found");
+            $this->writeToLog("File $fileName :  stream not found");
             return 0;
         }
         if ('video' == $streamType) {
             if (empty($data["height"]) || !intval($data["height"]) || empty($data["width"]) || !intval($data["width"])) {
-                self::writeToLog("File $fileName : invalid or corrupt dimensions");
+                $this->writeToLog("File $fileName : invalid or corrupt dimensions");
                 return 0;
             }
         }

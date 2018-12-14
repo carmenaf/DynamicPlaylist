@@ -3,7 +3,7 @@ include_once "smil.php";
 
 $today = date("Y-m-d H:i:s");
 $dt = date("U");
-$options = getopt('f:');
+$options = getopt('f:o:');
 
 $fileName = isset($options['f']) ? $options['f'] : '';
 
@@ -13,6 +13,12 @@ if (!$fileName) {
 if (!file_exists($fileName)) {
     help("File $fileName do not exists");
 }
+
+if (!file_exists($overlayFileName)) {
+    help("File $fileName do not exists");
+}
+
+
 
 $smil = new smil($fileName, false);
 
@@ -26,7 +32,7 @@ $configFile = "$dataDir/config.json";
 
 $processingBin = "$binDir/playlist2stream.sh";
 
-$delta = 2; // 10 sec
+$delta = 1; // 10 sec
 $debug = true;
 
 $config = $smil->readJson($configFile);
@@ -42,11 +48,7 @@ $mp4Basedir = isset($config["mp4Basedir"]) ? $config["mp4Basedir"] : "/opt/strea
 $hlsBasedir = isset($config["hlsBasedir"]) ? $config["hlsBasedir"] : "/opt/streaming/video/hls";
 $preparedVideoBasedir = isset($config["preparedVideoBasedir"]) ? $config["preparedVideoBasedir"] : "/opt/streaming/video/prepared";
 
-//$xmlString = file_get_contents($fileName);
-//$xml=$smil->readXml();
-//if( !$smil->readXml()) {
-//exit(1);
-//}
+
 $streamName = $smil->getStreamName();
 if (!$streamName) {
     exit(1);
@@ -94,7 +96,7 @@ while (true) {
     $length = floatval($record->video["length"]);
 
     if( $scheduled-$dt >1 ) {
-        usleep( intval(($scheduled-$dt-1)*1000000 )) ;
+        usleep( intval(($scheduled-$dt-$delta)*1000000 )) ;
     }
 
     if (preg_match('/^mp4:\/(.+)$/', $record->video["src"], $matches)) {
@@ -157,9 +159,10 @@ function help($msg)
     $script = basename(__FILE__);
     fwrite(STDERR,
         "$msg
-	Usage: $script -f file.smil
+	Usage: $script -f file.smil -o overlay_description.json
   where:
     file.smil - input file in SMIL format
+    overlay_description.json - input file in json format
 	\n");
     exit(-1);
 }
