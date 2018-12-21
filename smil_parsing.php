@@ -1,12 +1,24 @@
 <?php
 include_once "smil.php";
+include_once "ffmpeg_processing.php";
 
 $today = date("Y-m-d H:i:s");
 $dt = date("U");
+$basedir = dirname(__FILE__);
+$binDir = "$basedir/bin";
+$logDir = "$basedir/logs";
+$logUrl = "./logs";
+$dataDir = "$basedir/data";
+$configFile = "$dataDir/config.json";
+$processingBin = "$binDir/playlist2stream.sh";
+$delta = 1; // 10 sec
+$debug = true;
+$maxConcatFiles = 100;
+
 $options = getopt('f:o:');
 
 $fileName = isset($options['f']) ? $options['f'] : '';
-
+$overlayFileName = isset($options['o']) ? $options['o'] : '';
 if (!$fileName) {
     help("Please set the smil filename");
 }
@@ -14,26 +26,11 @@ if (!file_exists($fileName)) {
     help("File $fileName do not exists");
 }
 
-if (!file_exists($overlayFileName)) {
-    help("File $fileName do not exists");
+$smil = new Smil($fileName, false);
+
+if (!isset($overlayFileName)) {
+    $smil->writeToLog("Overlay file do not set");
 }
-
-
-
-$smil = new smil($fileName, false);
-
-$basedir = dirname(__FILE__);
-$binDir = "$basedir/bin";
-$logDir = "$basedir/logs";
-$logUrl = "./logs";
-
-$dataDir = "$basedir/data";
-$configFile = "$dataDir/config.json";
-
-$processingBin = "$binDir/playlist2stream.sh";
-
-$delta = 1; // 10 sec
-$debug = true;
 
 $config = $smil->readJson($configFile);
 if (!$config) {
@@ -48,7 +45,6 @@ $mp4Basedir = isset($config["mp4Basedir"]) ? $config["mp4Basedir"] : "/opt/strea
 $hlsBasedir = isset($config["hlsBasedir"]) ? $config["hlsBasedir"] : "/opt/streaming/video/hls";
 $preparedVideoBasedir = isset($config["preparedVideoBasedir"]) ? $config["preparedVideoBasedir"] : "/opt/streaming/video/prepared";
 
-
 $streamName = $smil->getStreamName();
 if (!$streamName) {
     exit(1);
@@ -59,18 +55,24 @@ $concatFifoPath = "$tmpDir/concat.fifo";
 if (!is_dir($tmpDir)) {
     @mkdir($tmpDir);
 }
-if (!$smil->makeFifo($concatFifoPath)) {
-    exit(1);
-}
 
-if (!doConcatListFile($tmpDir, $smil, 100)) {
-    exit(1);
+if (!isset($overlayDescriptionFile)) {
+    $overlayDescriptionFile = "$dataDir/empty.json";
 }
 
 // run ffmpeg processing
-$command = "/bin/bash $processingBin $hlsBasedir/$streamName $tmpDir >>$logDir/processing.log 2>&1 &";
-$smil->doExec($command);
+$ffmpeg_prcessing = new Ffmpeg_processing(false, $tmpDir);
+$concatList = $ffmpeg_prcessing->doConcatListFile($maxConcatFiles);
+if (!$concatList) {
+    exit(1);
+}
 
+$outputHlsDir = "$hlsBasedir/$streamName";
+$command = $ffmpeg_prcessing->concatStreams($concatList, $outputHlsDir, $overlayDescriptionFile);
+//$command = "/bin/bash $processingBin $hlsBasedir/$streamName $tmpDir >>$logDir/processing.log 2>&1 &";
+$smil->doExec("$command >>$logDir/$streamName.log 2>&1 &");
+
+$i = 0;
 while (true) {
     $dt = date("U");
     //$now = date("Y-m-d H:i:s");
@@ -95,26 +97,34 @@ while (true) {
     $start = floatval($record->video["start"]);
     $length = floatval($record->video["length"]);
 
-    if( $scheduled-$dt >1 ) {
-        usleep( intval(($scheduled-$dt-$delta)*1000000 )) ;
+    if ($scheduled - $dt > 1) {
+        usleep(intval(($scheduled - $dt - $delta) * 1000000));
     }
 
     if (preg_match('/^mp4:\/(.+)$/', $record->video["src"], $matches)) {
         $mp4File = "$mp4Basedir/" . $matches[1];
         if (file_exists($mp4File)) {
+
+            $videoInfo = $ffmpeg_prcessing->getVideoInfo($mp4File);
+            $outputFile = $ffmpeg_prcessing->getFifoName($i);
+            $command = $ffmpeg_prcessing->streamPreProcessing($mp4File, $outputFile, $videoInfo['duration'], $videoInfo['widthHD'], $videoInfo['heightHD']);
+            if (!isset($videoInfo['audioCodecName'])) {
+                $command = $ffmpeg_prcessing->streamPreProcessingWithoutAudio($mp4File, $outputFile, $videoInfo['duration'], $videoInfo['widthHD'], $videoInfo['heightHD']);
+            }
             // prepare file ( transcode to specified size, add pad, mpegts, stereo, etc )
-            $command = "echo '$mp4File' > $concatFifoPath";
+            // $command = "echo '$mp4File' > $concatFifoPath";
+            // $command = "echo '$mp4File' > $concatFifoPath";
             if ($debug) {
                 print "Command:" . PHP_EOL;
                 print var_dump($command);
             }
-            $smil->doExec($command);
-            #fwrite($fifo, $mp4File);
             $smil->writeToLog("Send command for processing file '$mp4File'");
+            $smil->doExec("$command 2>>$logDir/$streamName.$i.log");
         } else {
             $smil->writeToLog("Error: File '$mp4File' do not exists");
         }
     }
+    $i++;
     $dt = date("U");
     if ($debug) {
         print "Sleep:" . PHP_EOL;
@@ -125,7 +135,7 @@ while (true) {
         print var_dump($scheduled - $dt + $length - $delta);
     }
     //sleep($scheduled - $dt + $length - $delta);
-    usleep( intval($length*1000000 )) ;
+    //usleep(intval($length * 1000000));
 }
 
 $command = "echo 'EOF' > $concatFifoPath";
@@ -135,21 +145,6 @@ if ($debug) {
 }
 $smil->doExec($command);
 
-#fwrite($fifo, "EOF"); // magic string, finish processing on daemon
-
-/*
-foreach ($xml->body->playlist as $record) {
-#echo var_dump($record);
-#echo var_dump($record->video["src"]);
-echo $record["name"] . PHP_EOL;
-echo $record["playOnStream"] . PHP_EOL;
-echo $record["scheduled"] . PHP_EOL;
-echo $record->video["src"] . PHP_EOL;
-echo $record->video["start"] . PHP_EOL;
-echo $record->video["length"] . PHP_EOL;
-echo PHP_EOL;
-}
- */
 sleep(1);
 @unlink($concatFifoPath);
 @unlink($prepareFifoPath);
@@ -167,7 +162,7 @@ function help($msg)
     exit(-1);
 }
 
-function doConcatListFile($tmpDir, $smil, $count = 100)
+function old_doConcatListFile($tmpDir, $smil, $count = 100)
 {
     $listFile = "$tmpDir/list.txt";
     $listFileBody = "ffconcat version 1.0" . PHP_EOL;

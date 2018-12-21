@@ -1,5 +1,5 @@
 <?php
-class ffmpeg_processing
+class Ffmpeg_processing
 {
 
     private $error; // last error
@@ -10,8 +10,10 @@ class ffmpeg_processing
 
     private $logStdout;
     private $debug;
+    private $tmpFiles;
+    private $tmpDir;
 
-    public function __construct($debug = false, $ffprobe = 'ffprobe', $ffmpeg = 'ffmpeg', $logLevel = 'warning')
+    public function __construct($debug = false, $tmpDir = '/tmp/smil', $ffprobe = 'ffprobe', $ffmpeg = 'ffmpeg', $logLevel = 'warning')
     {
         $this->error = '';
         $this->ffprobe = $ffprobe;
@@ -19,6 +21,11 @@ class ffmpeg_processing
         $this->logLevel = $logLevel;
         $this->logStdout = true;
         $this->debug = $debug;
+        $this->tmpFiles = [];
+        if (!is_dir($tmpDir)) {
+            @mkdir($tmpDir);
+        }
+        $this->tmpDir = $tmpDir;
     }
 
 /**
@@ -58,10 +65,15 @@ class ffmpeg_processing
 
     public function readJson($configFile)
     {
+        $out = array();
+        if (!file_exists($configFile)) {
+            $this->writeToLogwriteToLog("File '$configFile' do not exists");
+            return ($out);
+        }
         $json = file_get_contents($configFile);
         if (!$json) {
             $this->writeToLog("Cannot read file '$configFile'");
-            return (array());
+            return ($out);
         }
         $out = json_decode($json, true);
         if (!$out) {
@@ -71,7 +83,22 @@ class ffmpeg_processing
         return ($out);
     }
 
-    public function prepareCommandPreProcessingWithoutAudio($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
+    public function reStreamToFile($fileName, $outputFile , $duration )
+    {
+        // this function copy PREPARED (!!!) file or stream to fifo for concatenation
+        // $fileNmae can be file or stream like rtmp://localhost/mystream
+        $logLevel = $this->logLevel;
+        $data = join(' ', array(
+            $this->ffmpeg,
+            " -y -loglevel ${logLevel} -i \"${fileName}\" -ss 0 -t ${duration} ",
+            "-c copy  -bsf:a aac_adtstoasc  -bsf:v h264_mp4toannexb ",
+            "-f mpegts - | cat > ${outputFile}",
+        ));
+        return ($data);
+    }
+
+
+    public function streamPreProcessingWithoutAudio($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
     {
         // if source don't have audio stream
         // output can be usual file and FIFO file
@@ -81,7 +108,7 @@ class ffmpeg_processing
             $this->ffmpeg,
             " -y -loglevel ${logLevel} -f lavfi -i \"anullsrc=channel_layout=stereo:sample_rate=44100\" -i \"${fileName}\" -ss 0 -t ${duration} ",
             "-vf \"scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
-            "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS  ",
+            "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS \" ",
             "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
             "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 ",
             "-shortest ",
@@ -90,7 +117,7 @@ class ffmpeg_processing
         return ($data);
     }
 
-    public function prepareCommandPreProcessing($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
+    public function streamPreProcessing($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
     {
         $logLevel = $this->logLevel;
 
@@ -99,7 +126,7 @@ class ffmpeg_processing
             $this->ffmpeg,
             "-y -loglevel ${logLevel} -i \"${fileName}\" -ss 0 -t ${duration} ",
             "-vf \"scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
-            "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS ",
+            "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS \" ",
             "-af \"aresample=44100, asetpts=PTS-STARTPTS\" ",
             "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
             "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 ",
@@ -119,7 +146,7 @@ class ffmpeg_processing
         $scaleFilter = array();
         $overlayFilters = array();
         $overlayText = array();
-        $includeTextOverlay = 'null';        
+        $includeTextOverlay = 'null';
         $i = 1;
 
         foreach ($overlaysData['overlay'] as $overlay) {
@@ -205,7 +232,7 @@ class ffmpeg_processing
         if (!empty($overlayText)) {
             $temporaryAssFile = time() . sha1(rand(100, 1000000)) . ".ass";
             if ($this->prepareSubtitles(1920, 1080, $temporaryAssFile, $overlayText)) {
-              $includeTextOverlay="ass=$temporaryAssFile";
+                $includeTextOverlay = "ass=$temporaryAssFile";
             }
         }
 
@@ -286,18 +313,18 @@ class ffmpeg_processing
             $styleMarginR = 10;
 
             switch ($record['align']) {
-            case "left":
-                $alignment = 7;
-                break;
-            case "right":
-                $alignment = 9;
-                break;
-            case "center":
-                $alignment = 8;
+                case "left":
+                    $alignment = 7;
+                    break;
+                case "right":
+                    $alignment = 9;
+                    break;
+                case "center":
+                    $alignment = 8;
 
-                break;
-            default:
-                $alignment = 7;
+                    break;
+                default:
+                    $alignment = 7;
             }
 
             $wrapWidth = 50;
@@ -410,6 +437,107 @@ $dialog
         $tmp_bbox['width'] = $bbox[2] + $xcorr;
         $tmp_bbox['height'] = $bbox[3] + $ycorr;
         return ($tmp_bbox['width']);
+    }
+
+    public function getTempioraryFile($extension)
+    {
+        $tmp = $this->tmpDir . "/" . time() . sha1(rand(100, 1000000)) . ".$extension";
+        $this->tmpFiles[] = $tmp;
+        return ($tmp);
+    }
+
+    public function removeTempioraryFiles()
+    {
+        foreach ($this->tmpFiles as $tmpFile) {
+            @unlink($tmpFile);
+        }
+        return (true);
+    }
+
+    public function makeFifo($fifoPath)
+    {
+        if (!file_exists($fifoPath)) {
+            if (!posix_mkfifo($fifoPath, 0644)) {
+                $this->writeToLog("Cannot create a pipe '$fifoPath'");
+                return (false);
+            }
+        }
+        return (true);
+    }
+
+    public function getFifoName($number)
+    {
+        $fifoName = $this->tmpDir . "/fifo_${number}.tmp";
+        return ($fifoName);
+    }
+
+    public function doConcatListFile($count = 100)
+    {
+        $listFile = $this->tmpDir . "/list.txt";
+        $listFileBody = "ffconcat version 1.0" . PHP_EOL;
+        for ($i = 0; $i < $count; $i++) {
+            $fifoName = $this->getFifoName($i);
+            // $fifoName = $this->tmpDir . "/fifo_${i}.tmp";
+            if (!$this->makeFifo($fifoName)) {
+                $this->writeToLogwriteToLog("Cannot prepare list of fifo files");
+                return (false);
+            }
+            $listFileBody .= "file '$fifoName'" . PHP_EOL;
+        }
+        file_put_contents($listFile, $listFileBody);
+        return ($listFile);
+    }
+
+    public function getVideoInfo($fileName)
+    {
+        $ffprobe = $this->ffprobe;
+        $duration = array();
+        $data = array();
+
+        if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -show_format -of json `, true)) {
+            writeToLog("Cannot get info about file $fileName");
+            return (false);
+        }
+        if (empty($probeJson["streams"])) {
+            writeToLog("Cannot get info about streams in file $fileName");
+            return (false);
+        }
+        foreach ($probeJson["streams"] as $stream) {
+
+            if ('video' == $stream["codec_type"]) {
+                if (empty($stream["height"]) || !intval($stream["height"]) || empty($stream["width"]) || !intval($stream["width"])) {
+                    writeToLog("File $fileName : invalid or corrupt dimensions");
+                    return (false);
+                }
+                $data["height"] = $stream["height"];
+                $data["width"] = $stream["width"];
+            }
+            if (isset($stream['duration']) && $stream['duration'] > 0) {
+                $duration[] = $stream['duration'];
+            }
+            if (isset($stream['tags']['DURATION']) && $this->time2float($stream['tags']['DURATION']) > 0) {
+                $duration[] = $this->time2float($stream['tags']['DURATION']);
+            }
+            if ('audio' == $stream["codec_type"]) {
+                $data["audioCodecName"] = $stream["codec_name"];
+                $data["audioSampleRate"] = $stream["sample_rate"];
+            }
+        }
+
+        if (empty($duration)) {
+            writeToLog("Error! File $fileName have incorrect format");
+            return (false);
+        }
+        $data['duration'] = min($duration);
+        $rate = $data["width"] / $data["height"];
+        $data["widthHD"] = round($data["width"] * 16 / 9 / $rate);
+        $data["heightHD"] = $data["height"];
+
+        if ($data['width'] / $data['height'] > 16 / 9) {
+            $data["widthHD"] = $data["width"];
+            $data["heightHD"] = round($data["height"] * 16 / 9 / $rate);
+        }
+        return ($data);
     }
 
 }

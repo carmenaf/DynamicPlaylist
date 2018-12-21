@@ -1,5 +1,5 @@
 <?php
-class smil
+class Smil
 {
 
     private $error; // last error
@@ -95,19 +95,24 @@ class smil
         return sprintf("%02d:%02d:%05.2f", $h, $m, $s);
     }
 
-    public  function readJson($configFile)
+    public function readJson($configFile)
     {
+        $out = array();
+        if (!file_exists($configFile)) {
+            $this->writeToLogwriteToLog("File '$configFile' do not exists");
+            return ($out);
+        }
         $json = file_get_contents($configFile);
         if (!$json) {
             $this->writeToLog("Cannot read file '$configFile'");
-            return (array());
+            return ($out);
         }
         $out = json_decode($json, true);
         if (!$out) {
             $this->writeToLog("Incorrect json string in json file '$configFile'");
-            return (false);
+            return (array());
         }
-        return (array());
+        return ($out);
     }
 
     public function getVideoInfo($fileName)
@@ -212,7 +217,7 @@ class smil
         try {
             $xml = simplexml_load_string($xmlString);
         } catch (Exception $e) {
-            $smil->writeToLog('Exception: ', $e->getMessage());
+            $this->writeToLog('Exception: ', $e->getMessage());
             return (false);
         }
         return ($xml);
