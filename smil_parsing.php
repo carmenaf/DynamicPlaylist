@@ -11,7 +11,7 @@ $logUrl = "./logs";
 $dataDir = "$basedir/data";
 $configFile = "$dataDir/config.json";
 $processingBin = "$binDir/playlist2stream.sh";
-$delta = 1; // 10 sec
+$delta = 4; // 10 sec
 $debug = true;
 $maxConcatFiles = 100;
 
@@ -52,9 +52,19 @@ if (!$streamName) {
 
 $tmpDir = "/tmp/smil/$streamName";
 $concatFifoPath = "$tmpDir/concat.fifo";
-if (!is_dir($tmpDir)) {
-    @mkdir($tmpDir);
+
+// clean tmpDir
+if (is_dir($tmpDir)) {
+    array_map('unlink', glob("$tmpDir/*.*"));
 }
+@mkdir($tmpDir);
+
+$outputHlsDir = "$hlsBasedir/$streamName";
+// clean outputHlsDir
+if (is_dir($outputHlsDir)) {
+    array_map('unlink', glob("$outputHlsDir/*.*"));
+}
+@mkdir($outputHlsDir);
 
 if (!isset($overlayDescriptionFile)) {
     $overlayDescriptionFile = "$dataDir/empty.json";
@@ -67,7 +77,6 @@ if (!$concatList) {
     exit(1);
 }
 
-$outputHlsDir = "$hlsBasedir/$streamName";
 $command = $ffmpeg_prcessing->concatStreams($concatList, $outputHlsDir, $overlayDescriptionFile);
 //$command = "/bin/bash $processingBin $hlsBasedir/$streamName $tmpDir >>$logDir/processing.log 2>&1 &";
 $smil->doExec("$command >>$logDir/$streamName.log 2>&1 &");
@@ -107,9 +116,12 @@ while (true) {
 
             $videoInfo = $ffmpeg_prcessing->getVideoInfo($mp4File);
             $outputFile = $ffmpeg_prcessing->getFifoName($i);
-            $command = $ffmpeg_prcessing->streamPreProcessing($mp4File, $outputFile, $videoInfo['duration'], $videoInfo['widthHD'], $videoInfo['heightHD']);
+
+            $videoInfo['widthHD']=640;
+            $videoInfo['heightHD']=360;
+            $command = $ffmpeg_prcessing->streamPreProcessing($mp4File, $outputFile, $length, $videoInfo['widthHD'], $videoInfo['heightHD']);
             if (!isset($videoInfo['audioCodecName'])) {
-                $command = $ffmpeg_prcessing->streamPreProcessingWithoutAudio($mp4File, $outputFile, $videoInfo['duration'], $videoInfo['widthHD'], $videoInfo['heightHD']);
+                $command = $ffmpeg_prcessing->streamPreProcessingWithoutAudio($mp4File, $outputFile, $length, $videoInfo['widthHD'], $videoInfo['heightHD']);
             }
             // prepare file ( transcode to specified size, add pad, mpegts, stereo, etc )
             // $command = "echo '$mp4File' > $concatFifoPath";
@@ -123,8 +135,8 @@ while (true) {
         } else {
             $smil->writeToLog("Error: File '$mp4File' do not exists");
         }
+        $i++;
     }
-    $i++;
     $dt = date("U");
     if ($debug) {
         print "Sleep:" . PHP_EOL;
@@ -132,13 +144,17 @@ while (true) {
         print var_dump($dt);
         print var_dump($length);
         print var_dump($delta);
-        print var_dump($scheduled - $dt + $length - $delta);
+        print var_dump($scheduled + $length - $dt - $delta);
     }
     //sleep($scheduled - $dt + $length - $delta);
     //usleep(intval($length * 1000000));
+    if (($scheduled + $length - $dt - $delta) > 0) {
+        usleep(intval(($scheduled + $length - $dt - $delta) * 1000000));
+    }
 }
 
-$command = "echo 'EOF' > $concatFifoPath";
+$outputFile = $ffmpeg_prcessing->getFifoName($i);
+$command = "echo /dev/null > $outputFile";
 if ($debug) {
     print "Command:" . PHP_EOL;
     print var_dump($command);

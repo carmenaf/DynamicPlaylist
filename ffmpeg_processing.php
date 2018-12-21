@@ -83,7 +83,7 @@ class Ffmpeg_processing
         return ($out);
     }
 
-    public function reStreamToFile($fileName, $outputFile , $duration )
+    public function reStreamToFile($fileName, $outputFile, $duration)
     {
         // this function copy PREPARED (!!!) file or stream to fifo for concatenation
         // $fileNmae can be file or stream like rtmp://localhost/mystream
@@ -96,7 +96,6 @@ class Ffmpeg_processing
         ));
         return ($data);
     }
-
 
     public function streamPreProcessingWithoutAudio($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
     {
@@ -111,8 +110,8 @@ class Ffmpeg_processing
             "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS \" ",
             "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
             "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 ",
-            "-shortest ",
-            "-f mpegts - | cat > ${outputFile}",
+            "-shortest -g 12 -keyint_min 25",
+            " -mpegts_copyts 1 -f mpegts - | cat > ${outputFile}",
         ));
         return ($data);
     }
@@ -124,14 +123,16 @@ class Ffmpeg_processing
         // output can be usual file and FIFO file
         $data = join(' ', array(
             $this->ffmpeg,
-            "-y -loglevel ${logLevel} -i \"${fileName}\" -ss 0 -t ${duration} ",
-            "-vf \"scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
-            "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS \" ",
-            "-af \"aresample=44100, asetpts=PTS-STARTPTS\" ",
+            "-y -loglevel ${logLevel} ",
+            "-i \"${fileName}\" -ss 0 -t ${duration} ",
+            "-filter_complex \"[0:v] scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
+            "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS [v];  ",
+            "[0:a] aresample=44100:async=1, asetpts=PTS-STARTPTS [a]\" ",
+            "-map \"[v]\" -map \"[a]\" ",
             "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
             "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 ",
-            "-shortest ",
-            "-f mpegts - | cat > ${outputFile} ",
+            "-shortest -g 12 -keyint_min 25",
+            " -mpegts_copyts 1 -f mpegts - | cat > ${outputFile} ",
         ));
         return ($data);
     }
@@ -241,27 +242,28 @@ class Ffmpeg_processing
         $data = join(' ', array(
             $this->ffmpeg,
             "-y -loglevel ${logLevel} -f concat -safe 0  -i ${fileName}",
+//            "-f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 ",
             join(" ", $overlayImage),
             "-filter_complex \"[0:v] scale=w=640:h=360, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
             join(" ", $scaleFilter),
             join(" ", $overlayFilters),
             "[v_${n}] ${includeTextOverlay} [v] ;",
-            "[0:a]asetrate=44100 , asetpts=PTS-STARTPTS [a] \"",
+            "[0:a] asetrate=44100 , asetpts=PTS-STARTPTS [a] \"",
+//            "[0:a] [1:a] amerge[a] \"",
             "-map \"[v]\" -map \"[a]\" ",
             "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k ",
             "-sc_threshold 0 ",
-            "-g 48 -keyint_min 48 ",
+            "-g 25 -keyint_min 25 ",
             "-bufsize 1200k -r 25",
             "-c:a aac -bsf:a aac_adtstoasc -ar 48000 -b:a 192k -ac 2 ",
-            "-shortest ",
+            "-shortest",
+//            " -f flv rtmp://localhost/myapp/stream "
             "-hls_time 4  ",
             "-hls_flags append_list ",
             "-hls_playlist_type event ",
             "-hls_allow_cache 1 ",
             "-hls_segment_type mpegts ",
-            " output.ts",
-            //"-hls_segment_filename '${hlsDir}/360p_%04d.ts' '${hlsDir}/360p.m3u8'",
-            //"&",
+            "-hls_segment_filename '${hlsDir}/360p_%04d.ts' '${hlsDir}/360p.m3u8'",
         ));
         return ($data);
     }
