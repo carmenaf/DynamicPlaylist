@@ -1,6 +1,6 @@
 {
-  "output_width": 1920,
-  "output_height": 1080,
+  "output_width": 1280,
+  "output_height": 720,
   "transition": "fade",
   "resize_original_video": true,
   "background": "black",
@@ -12,7 +12,7 @@
         "end": "20",
         "fade_in": 1.5,
         "fade_out": 1.5,
-        "file": "crest.jpg",
+        "file": "assets/crest.jpg",
         "x": 500,
         "y": 200,
         "width": 150,
@@ -23,10 +23,10 @@
       "type": "image",
       "properties": {
         "start": "15",
-        "end": "20",
+        "end": "30",
         "fade_in": 1.5,
         "fade_out": 1.5,
-        "file": "logo.png",
+        "file": "assets/logo.png",
         "x": 100,
         "y": 100,
         "width": 200,
@@ -34,13 +34,27 @@
       }
     },
     {
+      "type": "image",
+      "properties": {
+        "start": "25",
+        "end": "30",
+        "fade_in": 1.5,
+        "fade_out": 1.5,
+        "file": "assets/logo.png",
+        "x": 600,
+        "y": 500,
+        "width": 250,
+        "height": 250
+      }
+    },    
+    {
       "type": "video",
       "properties": {
         "start": "3",
-        "end": "10",
+        "end": "15",
         "fade_in": 1,
         "fade_out": 1,
-        "file": "logo.mp4",
+        "file": "assets/logo.mp4",
         "x": 20,
         "y": 0,
         "width": 150,
@@ -53,20 +67,39 @@
       }
     },
     {
+      "type": "video",
+      "properties": {
+        "start": "27",
+        "end": "38",
+        "fade_in": 1,
+        "fade_out": 1,
+        "file": "assets/logo.mp4",
+        "x": 20,
+        "y": 300,
+        "width": 200,
+        "height": 200,
+        "chromakey": {
+          "blend": 0.1,
+          "similarity": 0.1,
+          "color": "0x70de77"
+        }
+      }
+    },    
+    {
       "type": "text",
       "properties": {
         "start": "4",
-        "end": "12",
+        "end": "22",
         "fade_in": 1.5,
         "fade_out": 1,
-        "x": 100,
-        "y": 100,
+        "x": 400,
+        "y": 400,
         "text": "test text. test text. blablala",
         "font": "Arial",
-        "font_size": 80,
+        "font_size": 70,
         "font_color": "FFFFFF",
         "font_opacity": "00",
-        "out_line": 0.3,
+        "out_line": 3,
         "out_line_color": "555555",
         "out_line_opacity": "00",
         "align": "left",
@@ -79,19 +112,19 @@
     {
       "type": "text",
       "properties": {
-        "start": "8",
-        "end": "22",
+        "start": "17",
+        "end": "38",
         "fade_in": 1.5,
         "fade_out": 1,
         "x": 500,
         "y": 500,
         "text": "fc-query returns error code 0 for successful parsing, \\Nor 1 if any errors occured or if at least \\None font face could not be opened.",
         "font": "Arial",
-        "font_size": 90,
-        "font_color": "C9ABC7",
+        "font_size": 60,
+        "font_color": "000000",
         "font_opacity": "00",
-        "out_line": 0.3,
-        "out_line_color": "555555",
+        "out_line": 5,
+        "out_line_color": "FFFFFF",
         "out_line_opacity": "00",
         "align": "center",
         "bar": true,

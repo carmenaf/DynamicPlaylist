@@ -79,6 +79,10 @@ function getVideoInfo($fileName)
         if (isset($stream['tags']['DURATION']) && time2float($stream['tags']['DURATION']) > 0) {
             $duration[] = time2float($stream['tags']['DURATION']);
         }
+        if ('audio' == $stream["codec_type"]) {
+            $data["audioCodecName"] = $stream["codec_name"];
+            $data["audioSampleRate"] = $stream["sample_rate"];
+        }        
     }
 
     if (empty($duration)) {

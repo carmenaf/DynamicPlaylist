@@ -36,6 +36,7 @@ date_default_timezone_set($timeZone);
 $mp4Basedir = isset($config["mp4Basedir"]) ? $config["mp4Basedir"] : "/opt/streaming/mp4";
 
 $videos = array();
+$i = 0;
 foreach (glob("$mp4Basedir/*.*") as $videoFileName) {
     $path_parts = pathinfo($videoFileName);
 
@@ -46,7 +47,15 @@ foreach (glob("$mp4Basedir/*.*") as $videoFileName) {
     #echo "$filename размер " . filesize($filename) . "\n";
     $data = $smil->getVideoInfo($videoFileName);
     if ($data) {
-        $videos[] = array('filename' => $path_parts['basename'], 'duration' => $data['duration']);
+        if ($data['duration'] < 10) {
+            continue;
+        }
+        $videos[] = array('filename' => $path_parts['basename'], 'duration' => 10);
+        //$videos[] = array('filename' => $path_parts['basename'], 'duration' => $data['duration']);
+    }
+    $i++;
+    if ($i > 3) {
+        break;
     }
 
 }

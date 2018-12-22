@@ -11,14 +11,14 @@ $logUrl = "./logs";
 $dataDir = "$basedir/data";
 $configFile = "$dataDir/config.json";
 $processingBin = "$binDir/playlist2stream.sh";
-$delta = 4; // 10 sec
+$delta = 2; // 10 sec
 $debug = true;
 $maxConcatFiles = 100;
 
 $options = getopt('f:o:');
 
 $fileName = isset($options['f']) ? $options['f'] : '';
-$overlayFileName = isset($options['o']) ? $options['o'] : '';
+$overlayDescriptionFile = isset($options['o']) ? $options['o'] : '';
 if (!$fileName) {
     help("Please set the smil filename");
 }
@@ -28,7 +28,7 @@ if (!file_exists($fileName)) {
 
 $smil = new Smil($fileName, false);
 
-if (!isset($overlayFileName)) {
+if (!isset($overlayDescriptionFile)) {
     $smil->writeToLog("Overlay file do not set");
 }
 
@@ -79,7 +79,7 @@ if (!$concatList) {
 
 $command = $ffmpeg_prcessing->concatStreams($concatList, $outputHlsDir, $overlayDescriptionFile);
 //$command = "/bin/bash $processingBin $hlsBasedir/$streamName $tmpDir >>$logDir/processing.log 2>&1 &";
-$smil->doExec("$command >>$logDir/$streamName.log 2>&1 &");
+$ffmpeg_prcessing->doExec("$command >>$logDir/$streamName.log 2>&1 &");
 
 $i = 0;
 while (true) {
@@ -104,52 +104,73 @@ while (true) {
 
     $scheduled = $smil->date2unix($record["scheduled"]);
     $start = floatval($record->video["start"]);
-    $length = floatval($record->video["length"]);
+    $duration = floatval($record->video["length"]);
 
     if ($scheduled - $dt > 1) {
         usleep(intval(($scheduled - $dt - $delta) * 1000000));
     }
 
     if (preg_match('/^mp4:\/(.+)$/', $record->video["src"], $matches)) {
-        $mp4File = "$mp4Basedir/" . $matches[1];
-        if (file_exists($mp4File)) {
+        $videoSource = "$mp4Basedir/" . $matches[1];
+        if (file_exists($videoSource)) {
 
-            $videoInfo = $ffmpeg_prcessing->getVideoInfo($mp4File);
+            $videoInfo = $ffmpeg_prcessing->getVideoInfo($videoSource);
             $outputFile = $ffmpeg_prcessing->getFifoName($i);
 
-            $videoInfo['widthHD']=640;
-            $videoInfo['heightHD']=360;
-            $command = $ffmpeg_prcessing->streamPreProcessing($mp4File, $outputFile, $length, $videoInfo['widthHD'], $videoInfo['heightHD']);
+            $videoInfo['widthHD'] = 1280;
+            $videoInfo['heightHD'] = 720;
+            $command = $ffmpeg_prcessing->streamPreProcessing($videoSource, $outputFile, $start, $duration, $videoInfo['widthHD'], $videoInfo['heightHD']);
             if (!isset($videoInfo['audioCodecName'])) {
-                $command = $ffmpeg_prcessing->streamPreProcessingWithoutAudio($mp4File, $outputFile, $length, $videoInfo['widthHD'], $videoInfo['heightHD']);
+                $command = $ffmpeg_prcessing->streamPreProcessingWithoutAudio($videoSource, $outputFile, $start, $duration, $videoInfo['widthHD'], $videoInfo['heightHD']);
             }
-            // prepare file ( transcode to specified size, add pad, mpegts, stereo, etc )
-            // $command = "echo '$mp4File' > $concatFifoPath";
-            // $command = "echo '$mp4File' > $concatFifoPath";
             if ($debug) {
                 print "Command:" . PHP_EOL;
                 print var_dump($command);
             }
-            $smil->writeToLog("Send command for processing file '$mp4File'");
-            $smil->doExec("$command 2>>$logDir/$streamName.$i.log");
+            $smil->writeToLog("Send command for processing file '$videoSource'");
+            $ffmpeg_prcessing->doExec("$command 2>>$logDir/$streamName.$i.log");
         } else {
-            $smil->writeToLog("Error: File '$mp4File' do not exists");
+            $smil->writeToLog("Error: File '$videoSource' do not exists");
         }
         $i++;
     }
+    if (preg_match('/^(rtmp:\/\/(.+)$/', $record->video["src"], $matches)) {
+        $videoSource =  $matches[1];
+        $videoInfo = $ffmpeg_prcessing->getVideoInfo($videoSource);
+        if ($videoInfo) {
+            $videoInfo = $ffmpeg_prcessing->getVideoInfo($videoSource);
+            $outputFile = $ffmpeg_prcessing->getFifoName($i);
+
+            $videoInfo['widthHD'] = 1280;
+            $videoInfo['heightHD'] = 720;
+            $command = $ffmpeg_prcessing->streamPreProcessing($videoSource, $outputFile, $start, $duration, $videoInfo['widthHD'], $videoInfo['heightHD']);
+            if (!isset($videoInfo['audioCodecName'])) {
+                $command = $ffmpeg_prcessing->streamPreProcessingWithoutAudio($videoSource, $outputFile, $start, $duration, $videoInfo['widthHD'], $videoInfo['heightHD']);
+            }
+            if ($debug) {
+                print "Command:" . PHP_EOL;
+                print var_dump($command);
+            }
+            $smil->writeToLog("Send command for processing file '$videoSource'");
+            $ffmpeg_prcessing->doExec("$command 2>>$logDir/$streamName.$i.log");
+        } else {
+            $smil->writeToLog("Error: File '$videoSource' do not available");
+        }
+        $i++;
+    }    
     $dt = date("U");
     if ($debug) {
         print "Sleep:" . PHP_EOL;
         print var_dump($scheduled);
         print var_dump($dt);
-        print var_dump($length);
+        print var_dump($duration);
         print var_dump($delta);
-        print var_dump($scheduled + $length - $dt - $delta);
+        print var_dump($scheduled + $duration - $start - $dt - $delta);
     }
-    //sleep($scheduled - $dt + $length - $delta);
-    //usleep(intval($length * 1000000));
-    if (($scheduled + $length - $dt - $delta) > 0) {
-        usleep(intval(($scheduled + $length - $dt - $delta) * 1000000));
+    //sleep($scheduled - $dt + $duration - $delta);
+    //usleep(intval($duration * 1000000));
+    if (($scheduled + $duration - $dt - $delta) > 0) {
+        usleep(intval(($scheduled + $duration - $start - $dt - $delta) * 1000000));
     }
 }
 
@@ -159,7 +180,7 @@ if ($debug) {
     print "Command:" . PHP_EOL;
     print var_dump($command);
 }
-$smil->doExec($command);
+$ffmpeg_prcessing->doExec($command);
 
 sleep(1);
 @unlink($concatFifoPath);

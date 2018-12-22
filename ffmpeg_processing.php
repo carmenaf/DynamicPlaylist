@@ -97,7 +97,7 @@ class Ffmpeg_processing
         return ($data);
     }
 
-    public function streamPreProcessingWithoutAudio($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
+    public function streamPreProcessingWithoutAudio($fileName, $outputFile, $start, $duration, $widthHD = 1280, $heightHD = 720)
     {
         // if source don't have audio stream
         // output can be usual file and FIFO file
@@ -105,7 +105,7 @@ class Ffmpeg_processing
 
         $data = join(' ', array(
             $this->ffmpeg,
-            " -y -loglevel ${logLevel} -f lavfi -i \"anullsrc=channel_layout=stereo:sample_rate=44100\" -i \"${fileName}\" -ss 0 -t ${duration} ",
+            " -y -loglevel ${logLevel} -f lavfi -i \"anullsrc=channel_layout=stereo:sample_rate=44100\" -i \"${fileName}\" -ss $start -t ${duration} ",
             "-vf \"scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
             "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS \" ",
             "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
@@ -116,7 +116,7 @@ class Ffmpeg_processing
         return ($data);
     }
 
-    public function streamPreProcessing($fileName, $outputFile, $duration, $widthHD = 1280, $heightHD = 720)
+    public function streamPreProcessing($fileName, $outputFile, $start, $duration, $widthHD = 1280, $heightHD = 720)
     {
         $logLevel = $this->logLevel;
 
@@ -124,7 +124,7 @@ class Ffmpeg_processing
         $data = join(' ', array(
             $this->ffmpeg,
             "-y -loglevel ${logLevel} ",
-            "-i \"${fileName}\" -ss 0 -t ${duration} ",
+            "-i \"${fileName}\" -ss $start -t ${duration} ",
             "-filter_complex \"[0:v] scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
             "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS [v];  ",
             "[0:a] aresample=44100:async=1, asetpts=PTS-STARTPTS [a]\" ",
@@ -242,29 +242,80 @@ class Ffmpeg_processing
         $data = join(' ', array(
             $this->ffmpeg,
             "-y -loglevel ${logLevel} -f concat -safe 0  -i ${fileName}",
-//            "-f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 ",
             join(" ", $overlayImage),
-            "-filter_complex \"[0:v] scale=w=640:h=360, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
+            "-filter_complex \"[0:v] scale=w=1280:h=720, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
             join(" ", $scaleFilter),
             join(" ", $overlayFilters),
-            "[v_${n}] ${includeTextOverlay} [v] ;",
-            "[0:a] asetrate=44100 , asetpts=PTS-STARTPTS [a] \"",
-//            "[0:a] [1:a] amerge[a] \"",
-            "-map \"[v]\" -map \"[a]\" ",
-            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k ",
+            "[v_${n}] ${includeTextOverlay} , split=3 [v_360][v_480][v_720];",
+            "[0:a] asetrate=44100 , asetpts=PTS-STARTPTS , asplit=3 [a_360][a_480][a_720] \"",
+            "-map \"[v_720]\" -map \"[a_720]\" ",
+            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 2800k -maxrate 2996k -bufsize 4200k ",
             "-sc_threshold 0 ",
             "-g 25 -keyint_min 25 ",
-            "-bufsize 1200k -r 25",
-            "-c:a aac -bsf:a aac_adtstoasc -ar 48000 -b:a 192k -ac 2 ",
+            "-r 25",
+            "-c:a aac -bsf:a aac_adtstoasc  -b:a 128k -ac 2 ",
             "-shortest",
-//            " -f flv rtmp://localhost/myapp/stream "
+            "-hls_time 4  ",
+            "-hls_flags append_list ",
+            "-hls_playlist_type event ",
+            "-hls_allow_cache 1 ",
+            "-hls_segment_type mpegts ",
+            "-hls_segment_filename '${hlsDir}/720p_%04d.ts' '${hlsDir}/720p.m3u8'",
+
+            "-map \"[v_480]\" -map \"[a_480]\" ",
+            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 1400k -maxrate 1498k -bufsize 2100k ",
+            "-sc_threshold 0 ",
+            "-g 25 -keyint_min 25 ",
+            "-r 25",
+            "-c:a aac -bsf:a aac_adtstoasc -b:a 96k  -ac 2 ",
+            "-shortest",
+            "-hls_time 4  ",
+            "-hls_flags append_list ",
+            "-hls_playlist_type event ",
+            "-hls_allow_cache 1 ",
+            "-hls_segment_type mpegts ",
+            "-hls_segment_filename '${hlsDir}/480p_%04d.ts' '${hlsDir}/480p.m3u8'",
+
+            "-map \"[v_360]\" -map \"[a_360]\" ",
+            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k ",
+            "-sc_threshold 0 ",
+            "-g 25 -keyint_min 25 ",
+            "-r 25",
+            "-c:a aac -bsf:a aac_adtstoasc -b:a 96k  -ac 2 ",
+            "-shortest",
             "-hls_time 4  ",
             "-hls_flags append_list ",
             "-hls_playlist_type event ",
             "-hls_allow_cache 1 ",
             "-hls_segment_type mpegts ",
             "-hls_segment_filename '${hlsDir}/360p_%04d.ts' '${hlsDir}/360p.m3u8'",
+
         ));
+/*
+$data = join(' ', array(
+$this->ffmpeg,
+"-y -loglevel ${logLevel} -f concat -safe 0  -i ${fileName}",
+join(" ", $overlayImage),
+"-filter_complex \"[0:v] scale=w=1280:h=720, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
+join(" ", $scaleFilter),
+join(" ", $overlayFilters),
+"[v_${n}] ${includeTextOverlay} [v] ;",
+"[0:a] asetrate=44100 , asetpts=PTS-STARTPTS [a] \"",
+"-map \"[v]\" -map \"[a]\" ",
+"-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k ",
+"-sc_threshold 0 ",
+"-g 25 -keyint_min 25 ",
+"-bufsize 1200k -r 25",
+"-c:a aac -bsf:a aac_adtstoasc -b:a 192k -ac 2 ",
+"-shortest",
+"-hls_time 4  ",
+"-hls_flags append_list ",
+"-hls_playlist_type event ",
+"-hls_allow_cache 1 ",
+"-hls_segment_type mpegts ",
+"-hls_segment_filename '${hlsDir}/720p_%04d.ts' '${hlsDir}/720p.m3u8'",
+));
+ */
         return ($data);
     }
 
@@ -540,6 +591,26 @@ $dialog
             $data["heightHD"] = round($data["height"] * 16 / 9 / $rate);
         }
         return ($data);
+    }
+/**
+ * doExec
+ * @param    string    $Command
+ * @return integer 0-error, 1-success
+ */
+
+    public function doExec($Command)
+    {
+        $outputArray = array();
+        if ($this->debug) {
+            print $Command . PHP_EOL;
+            //return 1;
+        }
+        exec($Command, $outputArray, $execResult);
+        if ($execResult) {
+            $this->writeToLog(join("\n", $outputArray));
+            return 0;
+        }
+        return 1;
     }
 
 }
