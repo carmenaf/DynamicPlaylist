@@ -1,6 +1,8 @@
 {
-  "timezone":"Europe/Moscow",
-  "mp4Basedir":"/opt/streaming/mp4",
-  "hlsBasedir":"/opt/streaming/video/hls",
-  "preparedVideoBasedir":"/opt/streaming/video/prepared"
+  "timezone": "Europe/Moscow",
+  "mp4Basedir": "./assets/video",
+  "hlsBasedir": "/opt/streaming/video/hls",
+  "preparedVideoBasedir": "/opt/streaming/video/prepared",
+  "maxConcatFiles": 100,
+  "outputResolution": [360, 480]
 }

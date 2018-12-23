@@ -2,6 +2,8 @@
   "output_width": 1920,
   "output_height": 1080,
   "transition": "fade",
+  "fade_in": 0.5,
+  "fade_out": 0.5,  
   "resize_original_video": true,
   "background": "black",
   "overlay": [

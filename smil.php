@@ -68,7 +68,7 @@ class Smil
  * @return    float
  */
 
-    public  function time2float($t)
+    public function time2float($t)
     {
         $matches = preg_split("/:/", $t, 3);
         if (array_key_exists(2, $matches)) {
@@ -99,7 +99,7 @@ class Smil
     {
         $out = array();
         if (!file_exists($configFile)) {
-            $this->writeToLogwriteToLog("File '$configFile' do not exists");
+            $this->writeToLog("File '$configFile' do not exists");
             return ($out);
         }
         $json = file_get_contents($configFile);
@@ -115,26 +115,25 @@ class Smil
         return ($out);
     }
 
-    public function getVideoInfo($fileName)
+    public function getVideoInfo($fileName, $liveStream = false)
     {
-        # parameter - 'audio' or 'video'
         $ffprobe = $this->ffprobe;
         $duration = array();
         $data = array();
 
         if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -show_format -of json `, true)) {
-            writeToLog("Cannot get info about file $fileName");
+            $this->writeToLog("Cannot get info about file $fileName");
             return (false);
         }
         if (empty($probeJson["streams"])) {
-            writeToLog("Cannot get info about streams in file $fileName");
+            $this->writeToLog("Cannot get info about streams in file $fileName");
             return (false);
         }
         foreach ($probeJson["streams"] as $stream) {
 
             if ('video' == $stream["codec_type"]) {
                 if (empty($stream["height"]) || !intval($stream["height"]) || empty($stream["width"]) || !intval($stream["width"])) {
-                    writeToLog("File $fileName : invalid or corrupt dimensions");
+                    $this->writeToLog("File $fileName : invalid or corrupt dimensions");
                     return (false);
                 }
                 $data["height"] = $stream["height"];
@@ -151,12 +150,19 @@ class Smil
                 $data["audioSampleRate"] = $stream["sample_rate"];
             }
         }
-
-        if (empty($duration)) {
-            writeToLog("Error! File $fileName have incorrect format");
+        if (empty($data["height"]) || empty($data["width"])) {
+            $this->writeToLog("Error! File $fileName have incorrect format");
             return (false);
         }
-        $data['duration'] = min($duration);
+        if (!$liveStream) {
+            if (empty($duration)) {
+                $this->writeToLog("Error! File $fileName have incorrect format");
+                return (false);
+            }
+            $data['duration'] = min($duration);            
+        }
+
+
         $rate = $data["width"] / $data["height"];
         $data["widthHD"] = round($data["width"] * 16 / 9 / $rate);
         $data["heightHD"] = $data["height"];
@@ -247,6 +253,29 @@ class Smil
         return (false);
     }
 
+    public function getNextRecordByName($name)
+    {
+        if (!$this->readXml()) {
+            $this->writeToLog("Cannot get next record in playlist");
+            return (false);
+        }
+  
+        $selected=false;
+        foreach ($this->xml->body->playlist as $record) {
+            if( $selected) {
+                if ($this->debug) {
+                    print var_dump($name);                   
+                    print var_dump($record);
+                }                      
+                return( $record);
+            }
+            if( strval( $record["name"])==$name ) {
+                $selected=true;
+            }
+        }
+        return (array());
+    }
+
     public function getNextRecordByTime($startTimeUnix)
     {
         if (!$this->readXml()) {
@@ -254,15 +283,7 @@ class Smil
             return (false);
         }
         foreach ($this->xml->body->playlist as $record) {
-            /*
-            echo $record["name"] . PHP_EOL;
-            echo $record["playOnStream"] . PHP_EOL;
-            echo $record["scheduled"] . PHP_EOL;
-            echo $record->video["src"] . PHP_EOL;
-            echo $record->video["start"] . PHP_EOL;
-            echo $record->video["length"] . PHP_EOL;
-            echo PHP_EOL;
-             */
+
             $scheduled = $this->date2unix($record["scheduled"]);
             if ($this->debug) {
                 print var_dump($record);
@@ -276,37 +297,6 @@ class Smil
                 continue;
             }
             return ($record);
-        }
-        return (array());
-    }
-
-    public function getNextRecord()
-    {
-        if (!$this->readXml()) {
-            $this->writeToLog("Cannot get next record in playlist");
-            return (false);
-        }
-        foreach ($this->xml->body->playlist as $record) {
-            /*
-            echo $record["name"] . PHP_EOL;
-            echo $record["playOnStream"] . PHP_EOL;
-            echo $record["scheduled"] . PHP_EOL;
-            echo $record->video["src"] . PHP_EOL;
-            echo $record->video["start"] . PHP_EOL;
-            echo $record->video["length"] . PHP_EOL;
-            echo PHP_EOL;
-             */
-            $start = $this->date2unix($record->video["start"]);
-            if (!$start) {
-                return (false);
-            }
-            if ($start < $this->$timeCounter) {
-                continue;
-            }
-            $this->$timeCounter = $start;
-            $this->$videoLength = $record->video["length"];
-            return ($record);
-
         }
         return (array());
     }

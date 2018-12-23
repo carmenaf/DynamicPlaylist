@@ -1,7 +1,9 @@
 {
-  "output_width": 1280,
-  "output_height": 720,
+  "output_width": 1920,
+  "output_height": 1080,
   "transition": "fade",
+  "fade_in": 0.5,
+  "fade_out": 0.5,
   "resize_original_video": true,
   "background": "black",
   "overlay": [
@@ -13,10 +15,10 @@
         "fade_in": 1.5,
         "fade_out": 1.5,
         "file": "assets/crest.jpg",
-        "x": 500,
-        "y": 200,
-        "width": 150,
-        "height": 150
+        "x": 900,
+        "y": 30,
+        "width": 350,
+        "height": 350
       }
     },
     {
@@ -27,10 +29,10 @@
         "fade_in": 1.5,
         "fade_out": 1.5,
         "file": "assets/logo.png",
-        "x": 100,
-        "y": 100,
-        "width": 200,
-        "height": 200
+        "x": 30,
+        "y": 30,
+        "width": 300,
+        "height": 300
       }
     },
     {
@@ -38,15 +40,15 @@
       "properties": {
         "start": "25",
         "end": "30",
-        "fade_in": 1.5,
-        "fade_out": 1.5,
+        "fade_in": 1,
+        "fade_out": 1,
         "file": "assets/logo.png",
-        "x": 600,
+        "x": 30,
         "y": 500,
         "width": 250,
         "height": 250
       }
-    },    
+    },
     {
       "type": "video",
       "properties": {
@@ -55,13 +57,13 @@
         "fade_in": 1,
         "fade_out": 1,
         "file": "assets/logo.mp4",
-        "x": 20,
-        "y": 0,
-        "width": 150,
-        "height": 150,
+        "x": 30,
+        "y": 30,
+        "width": 250,
+        "height": 250,
         "chromakey": {
           "blend": 0.1,
-          "similarity": 0.1,
+          "similarity": 0.12,
           "color": "0x70de77"
         }
       }
@@ -69,22 +71,22 @@
     {
       "type": "video",
       "properties": {
-        "start": "27",
+        "start": "17",
         "end": "38",
         "fade_in": 1,
         "fade_out": 1,
         "file": "assets/logo.mp4",
-        "x": 20,
-        "y": 300,
-        "width": 200,
-        "height": 200,
+        "x": 900,
+        "y": 500,
+        "width": 300,
+        "height": 300,
         "chromakey": {
           "blend": 0.1,
-          "similarity": 0.1,
+          "similarity": 0.12,
           "color": "0x70de77"
         }
       }
-    },    
+    },
     {
       "type": "text",
       "properties": {
@@ -92,17 +94,17 @@
         "end": "22",
         "fade_in": 1.5,
         "fade_out": 1,
-        "x": 400,
+        "x": 640,
         "y": 400,
         "text": "test text. test text. blablala",
         "font": "Arial",
-        "font_size": 70,
+        "font_size": 50,
         "font_color": "FFFFFF",
         "font_opacity": "00",
-        "out_line": 3,
+        "out_line": 0.6,
         "out_line_color": "555555",
         "out_line_opacity": "00",
-        "align": "left",
+        "align": "center",
         "bar": true,
         "bar_color": "000000",
         "bar_opacity": "88",
@@ -116,22 +118,22 @@
         "end": "38",
         "fade_in": 1.5,
         "fade_out": 1,
-        "x": 500,
+        "x": 1200,
         "y": 500,
         "text": "fc-query returns error code 0 for successful parsing, \\Nor 1 if any errors occured or if at least \\None font face could not be opened.",
         "font": "Arial",
-        "font_size": 60,
+        "font_size": 45,
         "font_color": "000000",
         "font_opacity": "00",
-        "out_line": 5,
+        "out_line": 0.5,
         "out_line_color": "FFFFFF",
         "out_line_opacity": "00",
-        "align": "center",
+        "align": "right",
         "bar": true,
         "bar_color": "000000",
         "bar_opacity": "88",
         "animation": "none"
       }
-    }    
+    }
   ]
 }

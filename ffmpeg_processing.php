@@ -12,8 +12,9 @@ class Ffmpeg_processing
     private $debug;
     private $tmpFiles;
     private $tmpDir;
+    private $outputResolution;
 
-    public function __construct($debug = false, $tmpDir = '/tmp/smil', $ffprobe = 'ffprobe', $ffmpeg = 'ffmpeg', $logLevel = 'warning')
+    public function __construct($debug = false, $tmpDir = '/tmp/smil', $ffprobe = 'ffprobe', $ffmpeg = 'ffmpeg', $logLevel = 'warning', $outputResolution = array(360, 480))
     {
         $this->error = '';
         $this->ffprobe = $ffprobe;
@@ -23,8 +24,10 @@ class Ffmpeg_processing
         $this->debug = $debug;
         $this->tmpFiles = [];
         if (!is_dir($tmpDir)) {
-            @mkdir($tmpDir);
+            @mkdir($tmpDir, 0755, true);
         }
+        $this->outputResolution = $outputResolution; //$outputResolution=array( 360, 480, 720, 1080 );
+
         $this->tmpDir = $tmpDir;
     }
 
@@ -67,7 +70,7 @@ class Ffmpeg_processing
     {
         $out = array();
         if (!file_exists($configFile)) {
-            $this->writeToLogwriteToLog("File '$configFile' do not exists");
+            $this->writeToLog("File '$configFile' do not exists");
             return ($out);
         }
         $json = file_get_contents($configFile);
@@ -105,11 +108,13 @@ class Ffmpeg_processing
 
         $data = join(' ', array(
             $this->ffmpeg,
-            " -y -loglevel ${logLevel} -f lavfi -i \"anullsrc=channel_layout=stereo:sample_rate=44100\" -i \"${fileName}\" -ss $start -t ${duration} ",
+            " -y -loglevel ${logLevel} -f lavfi -i \"anullsrc=channel_layout=stereo:sample_rate=44100\" ",
+            "-fflags +genpts ",
+            "-i \"${fileName}\" -ss $start -t ${duration} ",
             "-vf \"scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
             "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS \" ",
-            "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
-            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 ",
+            "-c:a aac -bsf:a aac_adtstoasc -b:a 192k -ac 2  ",
+            "-c:v h264 -bsf:v h264_mp4toannexb -crf 18 -preset veryfast  -b:v 5000k -maxrate 5350k -bufsize 7500k  -r 25 ",
             "-shortest -g 12 -keyint_min 25",
             " -mpegts_copyts 1 -f mpegts - | cat > ${outputFile}",
         ));
@@ -124,13 +129,14 @@ class Ffmpeg_processing
         $data = join(' ', array(
             $this->ffmpeg,
             "-y -loglevel ${logLevel} ",
+            "-fflags +genpts ",
             "-i \"${fileName}\" -ss $start -t ${duration} ",
             "-filter_complex \"[0:v] scale=w=min(iw*${heightHD}/ih\,${widthHD}):h=min(${heightHD}\,ih*${widthHD}/iw), ",
             "pad=w=${widthHD}:h=${heightHD}:x=(${widthHD}-iw)/2:y=(${heightHD}-ih)/2, setsar=1, setpts=PTS-STARTPTS [v];  ",
             "[0:a] aresample=44100:async=1, asetpts=PTS-STARTPTS [a]\" ",
             "-map \"[v]\" -map \"[a]\" ",
-            "-c:a aac -bsf:a aac_adtstoasc -b:a 96k -ac 2  ",
-            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k -r 25 ",
+            "-c:a aac -bsf:a aac_adtstoasc -b:a 192k -ac 2  ",
+            "-c:v h264 -bsf:v h264_mp4toannexb -crf 18 -preset veryfast  -b:v 5000k -maxrate 5350k -bufsize 7500k -r 25 ",
             "-shortest -g 12 -keyint_min 25",
             " -mpegts_copyts 1 -f mpegts - | cat > ${outputFile} ",
         ));
@@ -148,6 +154,9 @@ class Ffmpeg_processing
         $overlayFilters = array();
         $overlayText = array();
         $includeTextOverlay = 'null';
+        $outputWidth = $overlaysData["output_width"];
+        $outputHeight = $overlaysData["output_height"];
+
         $i = 1;
 
         foreach ($overlaysData['overlay'] as $overlay) {
@@ -231,91 +240,37 @@ class Ffmpeg_processing
 
         }
         if (!empty($overlayText)) {
-            $temporaryAssFile = time() . sha1(rand(100, 1000000)) . ".ass";
-            if ($this->prepareSubtitles(1920, 1080, $temporaryAssFile, $overlayText)) {
+            $temporaryAssFile = $this->tmpDir . "/" . time() . sha1(rand(100, 1000000)) . ".ass";
+            if ($this->prepareSubtitles($outputWidth, $outputHeight, $temporaryAssFile, $overlayText)) {
                 $includeTextOverlay = "ass=$temporaryAssFile";
             }
         }
 
         $n = $i - 1;
         // output can be usual file and FIFO file
-        $data = join(' ', array(
+        $nsplit = 0;
+        $asplit = '';
+        $vsplit = '';
+        $outputScale = '';
+        foreach ($this->outputResolution as $resolution) {
+            $nsplit++;
+            $asplit .= "[a_$resolution]";
+            $vsplit .= "[vp_$resolution]";
+            $outputScale .= "[vp_$resolution] scale=height=$resolution:width=-2 [v_$resolution] ;";
+        }
+        $data = '';
+        $data .= join(' ', array(
             $this->ffmpeg,
             "-y -loglevel ${logLevel} -f concat -safe 0  -i ${fileName}",
             join(" ", $overlayImage),
-            "-filter_complex \"[0:v] scale=w=1280:h=720, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
+            "-filter_complex \"[0:v] scale=w=$outputWidth:h=$outputHeight, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
             join(" ", $scaleFilter),
             join(" ", $overlayFilters),
-            "[v_${n}] ${includeTextOverlay} , split=3 [v_360][v_480][v_720];",
-            "[0:a] asetrate=44100 , asetpts=PTS-STARTPTS , asplit=3 [a_360][a_480][a_720] \"",
-            "-map \"[v_720]\" -map \"[a_720]\" ",
-            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 2800k -maxrate 2996k -bufsize 4200k ",
-            "-sc_threshold 0 ",
-            "-g 25 -keyint_min 25 ",
-            "-r 25",
-            "-c:a aac -bsf:a aac_adtstoasc  -b:a 128k -ac 2 ",
-            "-shortest",
-            "-hls_time 4  ",
-            "-hls_flags append_list ",
-            "-hls_playlist_type event ",
-            "-hls_allow_cache 1 ",
-            "-hls_segment_type mpegts ",
-            "-hls_segment_filename '${hlsDir}/720p_%04d.ts' '${hlsDir}/720p.m3u8'",
-
-            "-map \"[v_480]\" -map \"[a_480]\" ",
-            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 1400k -maxrate 1498k -bufsize 2100k ",
-            "-sc_threshold 0 ",
-            "-g 25 -keyint_min 25 ",
-            "-r 25",
-            "-c:a aac -bsf:a aac_adtstoasc -b:a 96k  -ac 2 ",
-            "-shortest",
-            "-hls_time 4  ",
-            "-hls_flags append_list ",
-            "-hls_playlist_type event ",
-            "-hls_allow_cache 1 ",
-            "-hls_segment_type mpegts ",
-            "-hls_segment_filename '${hlsDir}/480p_%04d.ts' '${hlsDir}/480p.m3u8'",
-
-            "-map \"[v_360]\" -map \"[a_360]\" ",
-            "-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k ",
-            "-sc_threshold 0 ",
-            "-g 25 -keyint_min 25 ",
-            "-r 25",
-            "-c:a aac -bsf:a aac_adtstoasc -b:a 96k  -ac 2 ",
-            "-shortest",
-            "-hls_time 4  ",
-            "-hls_flags append_list ",
-            "-hls_playlist_type event ",
-            "-hls_allow_cache 1 ",
-            "-hls_segment_type mpegts ",
-            "-hls_segment_filename '${hlsDir}/360p_%04d.ts' '${hlsDir}/360p.m3u8'",
-
+            "[v_${n}] ${includeTextOverlay} , split=$nsplit $vsplit ;  $outputScale ",
+            "[0:a] asetrate=44100 , asetpts=PTS-STARTPTS , asplit=$nsplit $asplit \" ",
         ));
-/*
-$data = join(' ', array(
-$this->ffmpeg,
-"-y -loglevel ${logLevel} -f concat -safe 0  -i ${fileName}",
-join(" ", $overlayImage),
-"-filter_complex \"[0:v] scale=w=1280:h=720, setsar=1, setpts=PTS-STARTPTS [v_0]; ",
-join(" ", $scaleFilter),
-join(" ", $overlayFilters),
-"[v_${n}] ${includeTextOverlay} [v] ;",
-"[0:a] asetrate=44100 , asetpts=PTS-STARTPTS [a] \"",
-"-map \"[v]\" -map \"[a]\" ",
-"-c:v h264 -bsf:v h264_mp4toannexb -crf 21 -preset veryfast -b:v 800k -maxrate 856k ",
-"-sc_threshold 0 ",
-"-g 25 -keyint_min 25 ",
-"-bufsize 1200k -r 25",
-"-c:a aac -bsf:a aac_adtstoasc -b:a 192k -ac 2 ",
-"-shortest",
-"-hls_time 4  ",
-"-hls_flags append_list ",
-"-hls_playlist_type event ",
-"-hls_allow_cache 1 ",
-"-hls_segment_type mpegts ",
-"-hls_segment_filename '${hlsDir}/720p_%04d.ts' '${hlsDir}/720p.m3u8'",
-));
- */
+        $data .= $this->getOutputFfmpegFormat($hlsDir);
+
         return ($data);
     }
 
@@ -532,7 +487,7 @@ $dialog
             $fifoName = $this->getFifoName($i);
             // $fifoName = $this->tmpDir . "/fifo_${i}.tmp";
             if (!$this->makeFifo($fifoName)) {
-                $this->writeToLogwriteToLog("Cannot prepare list of fifo files");
+                $this->writeToLog("Cannot prepare list of fifo files");
                 return (false);
             }
             $listFileBody .= "file '$fifoName'" . PHP_EOL;
@@ -541,25 +496,25 @@ $dialog
         return ($listFile);
     }
 
-    public function getVideoInfo($fileName)
+    public function getVideoInfo($fileName, $liveStream = false)
     {
         $ffprobe = $this->ffprobe;
         $duration = array();
         $data = array();
 
         if (!$probeJson = json_decode(`"$ffprobe" $fileName -v quiet -hide_banner -show_streams -show_format -of json `, true)) {
-            writeToLog("Cannot get info about file $fileName");
+            $this->writeToLog("Cannot get info about file $fileName");
             return (false);
         }
         if (empty($probeJson["streams"])) {
-            writeToLog("Cannot get info about streams in file $fileName");
+            $this->writeToLog("Cannot get info about streams in file $fileName");
             return (false);
         }
         foreach ($probeJson["streams"] as $stream) {
 
             if ('video' == $stream["codec_type"]) {
                 if (empty($stream["height"]) || !intval($stream["height"]) || empty($stream["width"]) || !intval($stream["width"])) {
-                    writeToLog("File $fileName : invalid or corrupt dimensions");
+                    $this->writeToLog("File $fileName : invalid or corrupt dimensions");
                     return (false);
                 }
                 $data["height"] = $stream["height"];
@@ -576,12 +531,19 @@ $dialog
                 $data["audioSampleRate"] = $stream["sample_rate"];
             }
         }
-
-        if (empty($duration)) {
-            writeToLog("Error! File $fileName have incorrect format");
+        if (empty($data["height"]) || empty($data["width"])) {
+            $this->writeToLog("Error! File $fileName have incorrect format");
             return (false);
         }
-        $data['duration'] = min($duration);
+        if (!$liveStream) {
+            if (empty($duration)) {
+                $this->writeToLog("Error! File $fileName have incorrect format");
+                return (false);
+            }
+            $data['duration'] = min($duration);            
+        }
+
+
         $rate = $data["width"] / $data["height"];
         $data["widthHD"] = round($data["width"] * 16 / 9 / $rate);
         $data["heightHD"] = $data["height"];
@@ -611,6 +573,88 @@ $dialog
             return 0;
         }
         return 1;
+    }
+
+    private function getOutputFfmpegFormat($hlsDir)
+    {
+        $data = '';
+        foreach ($this->outputResolution as $resolution) {
+            if (1080 == $resolution) {
+                $data .= join(' ', array(
+                    "-map \"[v_1080]\" -map \"[a_1080]\" ",
+                    "-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 5000k -maxrate 5350k -bufsize 7500k  ",
+                    "-sc_threshold 0 ",
+                    "-g 48 -keyint_min 48 ",
+                    "-r 25",
+                    "-c:a aac -bsf:a aac_adtstoasc  -b:a 192k -ac 2 ",
+                    "-shortest",
+                    "-hls_time 3  ",
+                    "-hls_flags append_list ",
+                    "-hls_playlist_type event ",
+                    "-hls_allow_cache 1 ",
+                    "-hls_segment_type mpegts ",
+                    "-hls_segment_filename '${hlsDir}/1080p_%04d.ts' '${hlsDir}/1080p.m3u8' ",
+                ));
+            }
+
+            if (720 == $resolution) {
+                $data .= join(' ', array(
+                    "-map \"[v_720]\" -map \"[a_720]\" ",
+                    "-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 2800k -maxrate 2996k -bufsize 4200k ",
+                    //"-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 4000k -maxrate 4350k -bufsize 5500k  ",
+                    "-sc_threshold 0 ",
+                    "-g 48 -keyint_min 48 ",
+                    "-r 25",
+                    "-c:a aac -bsf:a aac_adtstoasc  -b:a 128k -ac 2 ",
+                    "-shortest",
+                    "-hls_time 3  ",
+                    "-hls_flags append_list ",
+                    "-hls_playlist_type event ",
+                    "-hls_allow_cache 1 ",
+                    "-hls_segment_type mpegts ",
+                    "-hls_segment_filename '${hlsDir}/720p_%04d.ts' '${hlsDir}/720p.m3u8' ",
+                ));
+            }
+
+            if (480 == $resolution) {
+                $data .= join(' ', array(
+                    "-map \"[v_480]\" -map \"[a_480]\" ",
+                    "-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 1400k -maxrate 1498k -bufsize 2100k ",
+                    //"-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 2800k -maxrate 2996k -bufsize 4200k",
+                    "-sc_threshold 0 ",
+                    "-g 48 -keyint_min 48 ",
+                    "-r 25",
+                    "-c:a aac -bsf:a aac_adtstoasc -b:a 96k  -ac 2 ",
+                    "-shortest",
+                    "-hls_time 3  ",
+                    "-hls_flags append_list ",
+                    "-hls_playlist_type event ",
+                    "-hls_allow_cache 1 ",
+                    "-hls_segment_type mpegts ",
+                    "-hls_segment_filename '${hlsDir}/480p_%04d.ts' '${hlsDir}/480p.m3u8' ",
+                ));
+            }
+
+            if (360 == $resolution) {
+                $data .= join(' ', array(
+                    "-map \"[v_360]\" -map \"[a_360]\" ",
+                    "-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 800k -maxrate 856k -bufsize 1200k ",
+                    //"-c:v h264 -bsf:v h264_mp4toannexb -crf 20 -preset veryfast -b:v 1400k -maxrate 1498k -bufsize 2100k ",
+                    "-sc_threshold 0 ",
+                    "-g 48 -keyint_min 48 ",
+                    "-r 25",
+                    "-c:a aac -bsf:a aac_adtstoasc -b:a 96k  -ac 2 ",
+                    "-shortest",
+                    "-hls_time 3  ",
+                    "-hls_flags append_list ",
+                    "-hls_playlist_type event ",
+                    "-hls_allow_cache 1 ",
+                    "-hls_segment_type mpegts ",
+                    "-hls_segment_filename '${hlsDir}/360p_%04d.ts' '${hlsDir}/360p.m3u8' ",
+                ));
+            }
+        }
+        return ($data);
     }
 
 }

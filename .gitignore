@@ -3,7 +3,7 @@
 *.tar
 *.tgz
 *.mp3
-*.mp4
+#*.mp4
 *.tar.gz
 *.db
 *.log

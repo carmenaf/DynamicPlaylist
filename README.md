@@ -8,9 +8,13 @@ This tool converting dynamic smil playlist to hls stream and add any independed 
 
 ## The Latest Version
 
-    version 1.1 2018.12.22
+    version 1.2 2018.12.24
 
 ## What's new
+    version 1.2 2018.12.24
+    + Fixed errors
+    + Prepare testing scripts
+    + Optional output hls resolution
 
     version 1.1 2018.12.22
     +	Fixed audio unsync
@@ -31,7 +35,7 @@ This tool converting dynamic smil playlist to hls stream and add any independed 
     1.	Support most part of video formats as input. Support vod stream sources
     2.	Correctly concatenate videos to hls stream
     3.	Add video, images and texts overlays to output video stream
-		4.	Now store hls to 36, 480, 720 ( require a lot of cpu for hi resolutions )
+    4.	Now store hls to 360, 480, 720 ( require a lot of cpu for hi resolutions )
 		5.	Image overlay support opacity ( for png )
 		6.	Video overlay support cromakey
 
@@ -62,23 +66,115 @@ sudo ln -s /usr/share/ffmpeg/ffmpeg-4.1-64bit-static/ffprobe /usr/bin/ffprobe
 
 ```
 
+#### Sample of nginx config
+```nginx.conf
+#user  nobody;
+worker_processes  1;
+
+#error_log  logs/error.log;
+#error_log  logs/error.log  notice;
+#error_log  logs/error.log  info;
+
+#pid        logs/nginx.pid;
+
+
+events {
+    worker_connections  1024;
+}
+
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+    #                  '$status $body_bytes_sent "$http_referer" '
+    #                  '"$http_user_agent" "$http_x_forwarded_for"';
+
+    #access_log  logs/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    #keepalive_timeout  0;
+    keepalive_timeout  65;
+
+    #gzip  on;
+
+    server {
+        listen       80;
+        server_name  localhost;
+
+        #charset koi8-r;
+
+        #access_log  logs/host.access.log  main;
+
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }
+
+        #error_page  404              /404.html;
+
+        # redirect server error pages to the static page /50x.html
+        #
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+
+        location /video {
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length';
+            # allow CORS preflight requests
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Allow-Origin' '*';
+                add_header 'Access-Control-Max-Age' 1728000;
+                add_header 'Content-Type' 'text/plain charset=UTF-8';
+                add_header 'Content-Length' 0;
+                return 204;
+            }
+            # Serve HLS fragments
+            types {
+                application/dash+xml mpd;
+                application/vnd.apple.mpegurl m3u8;
+                video/mp2t ts;
+            }
+            root /opt/streaming;
+            add_header Cache-Control no-cache;
+        }
+
+    }
+}	
+
+```
+
+
 
 ##  How to use
 ##  ------------
 	1.	Set required values in `data/config.json`
-	2.	Prepare smil file in required format ( eg `php do_test_smil_file.php -f test.smil`)
+	2.	Prepare smil file in required format, or run `php do_test_smil_with_streams.php -f test.smil -n 6` for test. This command shedule streaming in 10 seconds.
 	3.	Run main processing script `php smil_parsing -f test.smil`
-	4.	Open stream in any video player `http://my_ip/video/hls/myStream/360p.m3u8` ( `http://my_ip/video/hls/myStream/480p.m3u8`, `http://my_ip/video/hls/myStream/720p.m3u8`)
+	4.	Open stream in any video player `http://my_ip/video/hls/myStream/360p.m3u8` ( `http://my_ip/video/hls/myStream/480p.m3u8`, `http://my_ip/video/hls/myStream720p.m3u8`)
+
+eg:
+```
+$ php do_test_smil_with_streams.php -f test.smil -n 4
+$ php smil_parsing.php -f test.smil -o data/overlay_test.json
+$ ffplay http://localhost/video/hls/myStream/360p.m3u8
+```
 
 
 ### Data formats:
 #### data/config.json
-```
+```json
 {
   "timezone":"Europe/Moscow",
   "mp4Basedir":"/opt/streaming/mp4",
   "hlsBasedir":"/opt/streaming/video/hls",
-  "preparedVideoBasedir":"/opt/streaming/video/prepared"
+  "preparedVideoBasedir":"/opt/streaming/video/prepared",
+  "maxConcatFiles":100  
 }
 ```
 where:
@@ -87,10 +183,11 @@ where:
 	+	mp4Basedir - where video files are stored 
 	+	hlsBasedir - base directory for hls files. In this directory will be created folder with `stream name` and hls files will be stored in this subfolder. Eg stream `myStream` will be stored to /opt/streaming/video/hls/myStream and will be available with http://your_ip/video/hls/myStream/480p.m3u8
 	+	preparedVideoBasedir - do not used now
+  + maxConcatFiles - how many files can be processed
 
 
 #### overlay.json
-```
+```json
 {
   "output_width": 1920,
   "output_height": 1080,
@@ -159,6 +256,7 @@ where:
 }
 ```
 where:
+
 	+	output_width,output_height - this values will be used for resize of overlays ( depend of output video resolution)
 	+	type - values `image`, `video` or `text`
 	+	start	- start time from begining of output video
@@ -192,8 +290,11 @@ NOTE: for text overlays `x`, `y` and `align` values are related.
       </playlist>
       <stream name="myStream"></stream>
       <playlist name="p_303997902" playOnStream="myStream" repeat="false" scheduled="2018-12-02 21:42:06">
-      <video src="rtmp://ip/stream" start="0" length="23.456"/>
-      </playlist>			
+      <video src="rtmp://my_ip/stream" start="0" length="23.456"/>
+      </playlist>	
+      <playlist name="p_303997902" playOnStream="myStream" repeat="false" scheduled="2018-12-02 21:42:06">
+      <video src="http://my_ip/vod/vidpQLJMlIexv.mp4/playlist.m3u8" start="0" length="23.456"/>
+      </playlist>			      		
 </body>
 </smil>			
 ```
@@ -213,8 +314,6 @@ where:
 	2.	Fade transition between concatenated videos
 	3. 	Colored box(bar) for overlayed text, fix fontname by filename, auto wraping text
 	4.	Simple copy ( without processing ) for prepared videos
-	5. 	Resize for overlays videos and images
-
 
 
   Licensing

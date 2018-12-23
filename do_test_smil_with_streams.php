@@ -14,11 +14,14 @@ if (!$fileName) {
 }
 
 $streamSources = [];
-$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-11-17/vidpQLJMlIexv.mp4/playlist.m3u8";
-$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-01-17/vidJf9W0omDvi.mp4/playlist.m3u8";
-$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-08-16/vidBF9u2zEase.mp4/playlist.m3u8";
-$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-01-02/YT49eCVAokRI.mp4/playlist.m3u8";
 $streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-03-04/vidq87YMk2e3I.mp4/playlist.m3u8";
+$streamSources[] = "FZBo2wBH0zE.mp4";
+$streamSources[] = "rtmp://alaan.mangomolo.com/alaansrc/udp1.stream";
+$streamSources[] = "2ft954vXPa4.mp4";
+$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-01-17/vidJf9W0omDvi.mp4/playlist.m3u8";
+$streamSources[] = "AxoriYVxK5U.mp4";
+$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-08-16/vidBF9u2zEase.mp4/playlist.m3u8";
+$streamSources[] = "http://demo.cdn.mangomolo.com/vod/_definst_/mp4:2018-11-17/vidpQLJMlIexv.mp4/playlist.m3u8";
 
 $smil = new smil($fileName);
 
@@ -45,24 +48,43 @@ date_default_timezone_set($timeZone);
 $mp4Basedir = isset($config["mp4Basedir"]) ? $config["mp4Basedir"] : "/opt/streaming/mp4";
 
 $videos = array();
+/*
 foreach (glob("$mp4Basedir/*.mp4") as $videoFileName) {
-    $path_parts = pathinfo($videoFileName);
-    $data = $smil->getVideoInfo($videoFileName);
-    if ($data) {
-        if ($data['duration'] < 10) {
-            continue;
-        }
-        $videos[] = array('filename' => "mp4:/" . $path_parts['basename'], 'duration' => 10);
-    }
+$path_parts = pathinfo($videoFileName);
+$data = $smil->getVideoInfo($videoFileName);
+if ($data) {
+if ($data['duration'] < 10) {
+continue;
 }
+$videos[] = array('filename' => "mp4:/" . $path_parts['basename'], 'duration' => 10);
+}
+}
+ */
 
 foreach ($streamSources as $videoFileName) {
-    $data = $smil->getVideoInfo($videoFileName);
-    if ($data) {
-        if ($data['duration'] < 10) {
-            continue;
+    if (file_exists("$mp4Basedir/$videoFileName")) {
+        $data = $smil->getVideoInfo("$mp4Basedir/$videoFileName");
+        if ($data) {
+            if ($data['duration'] < 10) {
+                continue;
+            }
+            $videos[] = array('filename' => "mp4:/$videoFileName", 'duration' => 10);
         }
-        $videos[] = array('filename' => $videoFileName, 'duration' => 10);
+    } else {
+        $liveStream = false;
+        if (preg_match('/^(rtmp:\/\/.+)$/', $videoFileName, $matches)) {
+            $liveStream = true;
+        }
+        $data = $smil->getVideoInfo($videoFileName, $liveStream);
+        if ($data) {
+            if (preg_match('/^(rtmp:\/\/.+)$/', $videoFileName, $matches)) {
+                $data['duration'] = 10;
+            }
+            if ($data['duration'] < 10) {
+                continue;
+            }
+            $videos[] = array('filename' => $videoFileName, 'duration' => 10);
+        }
     }
 }
 
