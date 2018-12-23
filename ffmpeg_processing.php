@@ -329,7 +329,6 @@ class Ffmpeg_processing
                     break;
                 case "center":
                     $alignment = 8;
-
                     break;
                 default:
                     $alignment = 7;
@@ -350,6 +349,7 @@ class Ffmpeg_processing
             $useStyle = "Style_${i}";
             $styles .= "Style: $useStyle,$font,$fontSize,$fontColor,&H000000FF,$outLineColor,&H00919198,$styleBold,$styleItalic,0,0,100,100,0,0,1,$outLine,0,$alignment,$styleMarginL,$styleMarginR,10,1" . PHP_EOL;
             $dialog .= "Dialogue: $i,$start,$end,$useStyle,,0,0,0,,{\\1c$fontColor \\fad($fadeIn, $fadeOut) \\pos($x,$y) }$fixedText" . PHP_EOL;
+            $i++;
         }
         $content = "[Script Info]
 ; Aegisub 3.2.2
